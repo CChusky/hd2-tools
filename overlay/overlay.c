@@ -177,6 +177,25 @@ static BOOL CALLBACK enum_win(HWND h, LPARAM lp) {
     return TRUE;
 }
 
+/* v1.2: game-process liveness check (Toolhelp, no process handle - same
+ * approach as watcher v3.7, avoids Themida blocking OpenProcess). Used by
+ * the auto-exit logic: the old check looked for the game WINDOW, which
+ * fails for long stretches under fullscreen-exclusive rendering and made
+ * the overlay quit mid-game ("overlay keeps disappearing"). */
+static int game_process_alive(void) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    int alive = 0;
+    PROCESSENTRY32W pe; pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (_wcsicmp(pe.szExeFile, L"helldivers2.exe") == 0) { alive = 1; break; }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return alive;
+}
+
 static HWND find_game_window(void) {
     if (!g_game_pid) {
         HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -231,10 +250,12 @@ static void win_resize_dib(void) {
 /* 跟随游戏窗口所在显示器（或 config 指定显示器），每 500ms 调用 */
 static void win_place(void) {
     HWND game = find_game_window();
-    /* v1.1: auto-exit - if the game was seen once and then disappears for
-     * 10s (game closed), quit the overlay so it does not linger. */
+    /* v1.2: auto-exit checks the PROCESS, not the window. Under
+     * fullscreen-exclusive the game window can be invisible/untitled for
+     * long stretches; the old window-based check quit the overlay mid-game
+     * ("overlay keeps disappearing"). Process gone for 10s -> quit. */
     if (g_game_pid) {
-        if (!game) {
+        if (!game_process_alive()) {
             if (!g_game_gone_since) g_game_gone_since = GetTickCount();
             else if (GetTickCount() - g_game_gone_since > 10000) {
                 PostQuitMessage(0);
@@ -438,6 +459,12 @@ static void render(void) {
 
 /* ---------------- main ---------------- */
 int WINAPI WinMain(HINSTANCE hi, HINSTANCE, LPSTR, int) {
+    /* v1.2: single-instance guard - two overlays stacked on top of each
+     * other (watcher auto-start + manual run) caused flickering/misleading
+     * disappearances. */
+    CreateMutexA(NULL, TRUE, "Local\\HD2OverlayMutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+
     /* exe 目录 */
     GetModuleFileNameA(NULL, g_exe_dir, sizeof g_exe_dir);
     char *slash = strrchr(g_exe_dir, '\\');
