@@ -28,12 +28,12 @@ hd2-tools/
 │   ├── lang_zh.ini     # 简体中文
 │   ├── lang_en.ini     # English
 │   └── build_overlay.bat
-└── hook/               # 游戏内 hook（数据采集 + 注入）
+└── hook/               # 游戏内 hook（纯数据采集，不依赖 ReShade）
     ├── hd2_raycast_hook.c
-    ├── hd2_addon/      # ReShade addon（可选）
-    ├── watcher.c       # 自动注入器（游戏启动时注入）
-    ├── dll_injector.c  # 手动注入器
-    └── build_*.bat
+    ├── hd2_addon_stub.c    # addon 空实现（纯数据版）
+    ├── watcher.c           # 自动注入器（游戏启动时注入）
+    ├── dll_injector.c      # 手动注入器
+    └── build_clean.bat / build_watcher.bat
 ```
 
 ## 构建 Build
@@ -42,27 +42,16 @@ hd2-tools/
 
 ```
 overlay:  hd2_overlay\build_overlay.bat   -> overlay.exe
-hook:     build_clean.bat                 -> hd2_raycast_hook_clean.dll (pure data, pairs with overlay.exe)
-          build_v7.bat                    -> hd2_raycast_hook_v7.dll     (ReShade addon mixed build)
+hook:     build_clean.bat                 -> hd2_raycast_hook_clean.dll（纯数据版）
 injector: build_watcher.bat               -> watcher.exe
 ```
 
 ## 使用 Usage
 
-**推荐（无 ReShade）**：用纯数据版 hook + 外部窗口 overlay
 1. 将 `hd2_raycast_hook_clean.dll` 重命名为 `hd2_raycast_hook.dll`，放到 `watcher.exe` 同目录
-2. 启动游戏，运行 `watcher.exe`（自动注入）
+2. 启动游戏，运行 `watcher.exe`（自动注入，纯数据采集）
 3. 运行 `overlay.exe`（透明窗口显示锁定信息，自动跟随游戏所在屏幕）
-4. 游戏内按 `F4` 锁定目标
-
-**备选（ReShade）**：`build_v7.bat` 的混合版在游戏内渲染 HUD（需 ReShade 环境）。
-
-```
-1. Put hd2_raycast_hook.dll next to watcher.exe
-2. Start the game, run watcher.exe (auto-inject)
-3. Run overlay.exe (follows the game's monitor)
-4. Press F4 in-game to lock a target
-```
+4. 游戏内按 `F4` 锁定目标，overlay 面板实时显示
 
 ## 配置 Config (`overlay/config.ini`)
 
