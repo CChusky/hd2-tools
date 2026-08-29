@@ -45,6 +45,15 @@ Mesh outline tables are loaded on demand with this search order:
 
 Rebuild the tables with `meshes/build_all2.py`.
 
+## Name Lookup Table
+
+`hash_table.txt` maps unit hashes to friendly names (F4 lock label / Numpad1 scan). Load order:
+
+1. `HD2_HASH_TABLE` environment variable (point it at the file)
+2. `hash_table.txt` next to `hd2_raycast_hook.dll`
+
+Without it the tools still work - hashes are shown as raw hex instead of names.
+
 ## Build
 
 Requires Visual Studio 2022 (MSVC x64) + Windows SDK.

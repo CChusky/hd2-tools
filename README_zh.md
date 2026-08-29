@@ -45,6 +45,15 @@ mesh 轮廓表按以下优先级加载：
 
 重新生成表：`meshes/build_all2.py`。
 
+## 名称对照表
+
+`hash_table.txt` 把单位哈希映射为易读名称（F4 锁定标签 / Numpad1 扫描输出）。加载优先级：
+
+1. 环境变量 `HD2_HASH_TABLE`（指向该文件）
+2. hook DLL 同目录的 `hash_table.txt`
+
+没有对照表时工具仍可工作，只是哈希显示为十六进制而非名称。
+
 ## 构建
 
 需要 Visual Studio 2022（MSVC x64）+ Windows SDK。

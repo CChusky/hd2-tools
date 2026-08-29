@@ -1402,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.63"
+#define RC_BUILD_VER "v10.64"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1872,9 +1872,36 @@ static int htab_cmp(const void *a, const void *b) {
     return (ha < hb) ? -1 : (ha > hb) ? 1 : 0;
 }
 
+/* v10.64: resolve the hash table like mesh tables - try env HD2_HASH_TABLE,
+ * then hash_table.txt next to the DLL, then the legacy RC_DIR
+ * 哈希对照表.txt. The old code hard-coded RC_DIR, so packaged users (no
+ * RC_DIR on their machine) silently lost every type name. */
+static FILE *hash_table_open(void) {
+    char cand[MAX_PATH];
+    const char *env = getenv("HD2_HASH_TABLE");
+    if (env && env[0]) {
+        FILE *f = rc_fopen_utf8(env, "r");
+        if (f) return f;
+    }
+    HMODULE self = GetModuleHandleA("hd2_raycast_hook.dll");
+    if (self) {
+        char dir[MAX_PATH];
+        if (GetModuleFileNameA(self, dir, sizeof(dir)) > 0) {
+            char *slash = strrchr(dir, '\\');
+            if (slash) {
+                slash[1] = 0;
+                snprintf(cand, sizeof(cand), "%shash_table.txt", dir);
+                FILE *f = rc_fopen_utf8(cand, "r");
+                if (f) return f;
+            }
+        }
+    }
+    return rc_fopen_utf8(RC_DIR "哈希对照表.txt", "r");
+}
+
 static void load_hash_table(void) {
     if (g_htab_count) return;
-    FILE *f = rc_fopen_utf8(RC_DIR "哈希对照表.txt", "r");
+    FILE *f = hash_table_open();
     if (!f) {
         log_msg("%s", "[RAYCAST] hash table not found (skip name lookup)\n");
         return;
