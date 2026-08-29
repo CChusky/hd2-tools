@@ -12,6 +12,12 @@ Helldivers 2 modding tools: external target-lock overlay + in-game hook.
 - **Bilingual UI**: Simplified Chinese / English, hotkey switch
 - **Multi-monitor aware**: overlay follows the monitor the game window is on
 
+## Support
+
+If this project is useful to you, you can buy me a coffee:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/cchusky7680)
+
 ## Layout
 
 ```
@@ -88,12 +94,6 @@ Hotkeys: `Ctrl+Shift+L` language, `Ctrl+Shift+H` show/hide, `Ctrl+Shift+Q` quit.
 
 hook <-> overlay via shared memory `Local\HD2RaycastShm` (v4):
 locked target (name / hash / distance), camera params, projected wireframe points, command channel, feedback text.
-
-## Support
-
-If this project is useful to you, you can buy me a coffee:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/cchusky7680)
 
 ## License
 
