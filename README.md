@@ -35,29 +35,6 @@ hd2-tools/
                         # loaded on demand from D:\hd2_meshtables\ (or rebuilt with build_all2.py)
 ```
 
-## Versions
-
-Two builds exist; core recognition logic is identical, display differs:
-
-| | External-window (recommended) | ReShade (optional) |
-|---|---|---|
-| hook | pure data capture (shared memory only) | mixed build (in-game rendering) |
-| display | `overlay.exe` external transparent window | ReShade in-game HUD (crosshair / wireframe) |
-| dependencies | none (no ReShade / DebugView) | ReShade runtime |
-| audience | regular players, plug-and-play | users who want an in-game HUD |
-
-- External-window build: full source in this repo (`hook/` + `overlay/` + `meshes/`)
-- ReShade build: `build_v7.bat` + `hd2_addon/` (ReShade SDK), kept locally, not published here
-
-## Switch Between Versions
-
-`watcher.exe` always injects the fixed filename `hd2_raycast_hook.dll` - **switching = replacing that one file**:
-
-1. **External-window**: rename `build_clean.bat` output to `hd2_raycast_hook.dll` -> run `overlay.exe`
-2. **ReShade**: rename `build_v7.bat` output to `hd2_raycast_hook.dll` -> in-game HUD (needs ReShade), no overlay
-
-Both share the same `watcher.exe` and `meshes/` tables. Restart the game after switching.
-
 ## Build
 
 Requires Visual Studio 2022 (MSVC x64) + Windows SDK.
