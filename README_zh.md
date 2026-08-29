@@ -51,13 +51,13 @@ mesh 轮廓表按以下优先级加载：
 
 ```
 overlay:  hd2_overlay\build_overlay.bat   -> overlay.exe
-hook:     build_clean.bat                 -> hd2_raycast_hook_clean.dll（纯数据版）
+hook:     build_clean.bat                 -> hd2_raycast_hook.dll（纯数据版，仅 F4 + Numpad1）
 injector: build_watcher.bat               -> watcher.exe
 ```
 
 ## 使用
 
-1. 将 `hd2_raycast_hook_clean.dll` 重命名为 `hd2_raycast_hook.dll`，放到 `watcher.exe` 同目录
+1. 将编译产物 `hd2_raycast_hook.dll` 放到 `watcher.exe` 同目录
 2. 启动游戏，运行 `watcher.exe`（自动注入，纯数据采集）
 3. 运行 `overlay.exe`（透明窗口显示锁定信息，自动跟随游戏所在屏幕）
 4. 游戏内按 `F4` 锁定目标，overlay 面板实时显示

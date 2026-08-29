@@ -51,13 +51,13 @@ Requires Visual Studio 2022 (MSVC x64) + Windows SDK.
 
 ```
 overlay:  hd2_overlay\build_overlay.bat   -> overlay.exe
-hook:     build_clean.bat                 -> hd2_raycast_hook_clean.dll (pure data)
+hook:     build_clean.bat                 -> hd2_raycast_hook.dll (pure data, F4 + Numpad1)
 injector: build_watcher.bat               -> watcher.exe
 ```
 
 ## Usage
 
-1. Rename `hd2_raycast_hook_clean.dll` to `hd2_raycast_hook.dll`, place next to `watcher.exe`
+1. Use `hd2_raycast_hook.dll` (built by `build_clean.bat`), place next to `watcher.exe`
 2. Start the game, run `watcher.exe` (auto-inject, pure data capture)
 3. Run `overlay.exe` (transparent window, follows the game's monitor)
 4. Press `F4` in-game to lock a target - overlay shows the info
