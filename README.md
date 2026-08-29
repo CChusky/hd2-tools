@@ -38,6 +38,29 @@ hd2-tools/
                         # 运行时按需加载到 D:\hd2_meshtables\（或 build_all2.py 重新生成）
 ```
 
+## 版本说明 Versions
+
+本项目有**两个版本**，显示方式不同，核心识别逻辑相同：
+
+| | 外部窗口版（推荐） | ReShade 版（可选） |
+|---|---|---|
+| hook | 纯数据采集（只写共享内存） | 混合版（含游戏内渲染） |
+| 显示 | `overlay.exe` 外部透明窗口 | ReShade 游戏内 HUD（准心/线框） |
+| 依赖 | 无（不需要 ReShade/DebugView） | ReShade 运行时 |
+| 适用 | 普通玩家，开箱即用 | 需要游戏内 HUD 的用户 |
+
+- 外部窗口版：本仓库完整源码（`hook/` + `overlay/` + `meshes/`）
+- ReShade 版：构建脚本 `build_v7.bat` + `hd2_addon/`（ReShade SDK），本地保留、未随仓库发布
+
+## 版本切换 Switch
+
+`watcher.exe` 注入固定文件名 `hd2_raycast_hook.dll`——**切换版本 = 替换这一个文件**：
+
+1. **用外部窗口版**：`build_clean.bat` 产物重命名为 `hd2_raycast_hook.dll` → 运行 `overlay.exe` 看显示
+2. **用 ReShade 版**：`build_v7.bat` 产物重命名为 `hd2_raycast_hook.dll` → 游戏内看 HUD（需 ReShade 环境），不开 overlay
+
+两版共用同一 `watcher.exe` 注入器和 `meshes/` 轮廓表，切换后重启游戏注入即生效。
+
 ## 构建 Build
 
 需要 Visual Studio 2022（MSVC x64）+ Windows SDK。
