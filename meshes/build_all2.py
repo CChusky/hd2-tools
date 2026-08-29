@@ -184,7 +184,7 @@ def build_pack(pname):
     # v10.64: skip packs with no unit entries BEFORE unpacking the bundles -
     # reconstruct_package_from_bundles() reads hundreds of MB per pack and
     # most packs contain no units at all.
-    if not any(t == UNIT_TYPE for t in entries.values()):
+    if not any(t[0] == UNIT_TYPE for t in entries.values()):
         return 0, 0, 0
     loader = types.SimpleNamespace(entries=entries)
     loader.pkg = slim.reconstruct_package_from_bundles(pname)
