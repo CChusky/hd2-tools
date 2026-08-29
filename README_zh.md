@@ -82,8 +82,8 @@ hook 与 overlay 通过共享内存 `Local\HD2RaycastShm`（v4）通信：
 
 ## 许可
 
-**仅限非商业用途。** 完整条款见 [LICENSE](LICENSE)。
-未经版权所有者书面许可，不得将本软件用于任何商业目的。
+[PolyForm Noncommercial License 1.0.0](LICENSE)——仅限非商业用途。
+允许个人、研究及非商业组织使用；任何商业目的均需获得版权所有者许可。
 
 ## 免责声明
 

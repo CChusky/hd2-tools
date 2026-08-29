@@ -82,9 +82,9 @@ locked target (name / hash / distance), camera params, projected wireframe point
 
 ## License
 
-**Non-Commercial Use Only.** See [LICENSE](LICENSE) for full terms.
-The software may not be used for any commercial purpose without prior written
-permission.
+[PolyForm Noncommercial License 1.0.0](LICENSE) - non-commercial use only.
+Personal, research and noncommercial-organization use is permitted; any
+commercial purpose requires permission from the licensor.
 
 ## Disclaimer
 
