@@ -42,16 +42,20 @@ hd2-tools/
 
 ```
 overlay:  hd2_overlay\build_overlay.bat   -> overlay.exe
-hook:     build_v7.bat                    -> hd2_raycast_hook_v7.dll
+hook:     build_clean.bat                 -> hd2_raycast_hook_clean.dll (pure data, pairs with overlay.exe)
+          build_v7.bat                    -> hd2_raycast_hook_v7.dll     (ReShade addon mixed build)
 injector: build_watcher.bat               -> watcher.exe
 ```
 
 ## 使用 Usage
 
-1. 将 `hd2_raycast_hook.dll` 放到与 `watcher.exe` 相同目录
-2. 启动游戏，运行 `watcher.exe`（自动注入 hook）
-3. 运行 `overlay.exe`（透明覆盖层自动跟随游戏窗口所在屏幕）
-4. 游戏内按 `F4` 锁定目标，`overlay` 显示锁定信息
+**推荐（无 ReShade）**：用纯数据版 hook + 外部窗口 overlay
+1. 将 `hd2_raycast_hook_clean.dll` 重命名为 `hd2_raycast_hook.dll`，放到 `watcher.exe` 同目录
+2. 启动游戏，运行 `watcher.exe`（自动注入）
+3. 运行 `overlay.exe`（透明窗口显示锁定信息，自动跟随游戏所在屏幕）
+4. 游戏内按 `F4` 锁定目标
+
+**备选（ReShade）**：`build_v7.bat` 的混合版在游戏内渲染 HUD（需 ReShade 环境）。
 
 ```
 1. Put hd2_raycast_hook.dll next to watcher.exe
