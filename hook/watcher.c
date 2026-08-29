@@ -173,19 +173,14 @@ static HWND find_process_window(DWORD pid) {
 // Wait until the game is likely fully loaded before injecting. The game's
 // working set fluctuates heavily while loading scenes/animations, so a
 // "stable memory" check is unreliable (it never stabilizes -> never injects).
-/* v3.4: fixed-delay ready wait, no window probing. The manual injector
- * (dll_injector) succeeds at ANY time without ever touching window APIs;
- * watcher's EnumWindows probe or its elevation seemed to be the difference.
- * This mirrors dll_injector: no probe, just a fixed settle delay. */
+/* v3.7: fixed-delay ready wait, NO process handle at all (dll_injector
+ * never opens the target before injecting; Themida may flag callers that
+ * opened a handle earlier). Pure sleep + polling by name only. */
 static DWORD g_settle_ms = 8000;
-static void wait_game_ready(DWORD pid, HANDLE hp) {
-    log_msg("Waiting %lu ms for game %lu to initialize (fixed delay, no window probe)...\n",
+static void wait_game_ready(DWORD pid) {
+    log_msg("Waiting %lu ms for game %lu to initialize (fixed delay, no handles)...\n",
         (unsigned long)g_settle_ms, pid);
-    DWORD t0 = GetTickCount();
-    while (GetTickCount() - t0 < g_settle_ms) {
-        if (WaitForSingleObject(hp, 0) == WAIT_OBJECT_0) return;   // exited
-        Sleep(1000);
-    }
+    Sleep(g_settle_ms);
     log_msg("Game %lu ready (fixed %lu ms delay)\n", pid, (unsigned long)g_settle_ms);
 }
 
@@ -315,16 +310,9 @@ int main(int argc, char *argv[]) {
         if (pid && pid != injected) {
             log_msg("Game detected (PID %lu)\n", pid);
             if (!quick_retry) {
-                // Wait until the game is fully loaded BEFORE injecting: injecting
-                // during the startup/loading phase crashed the game (TSF/input
-                // hooks ran too early). Late injection is safe.
-                HANDLE hp0 = OpenProcess(SYNCHRONIZE, FALSE, pid);
-                if (hp0) {
-                    wait_game_ready(pid, hp0);
-                    CloseHandle(hp0);
-                } else {
-                    log_msg("OpenProcess(SYNCHRONIZE) failed %lu - injecting immediately\n", GetLastError());
-                }
+                /* v3.7: no OpenProcess(SYNCHRONIZE) - dll_injector never
+                 * opens the target before injecting. Pure delay. */
+                wait_game_ready(pid);
             } else {
                 log_msg("Quick retry (game window already seen)\n");
             }
@@ -334,28 +322,16 @@ int main(int argc, char *argv[]) {
                 injected = pid;
                 quick_retry = 0;
                 ensure_overlay_started(); /* v3.5 */
-                // wait for process exit
-                HANDLE hp = OpenProcess(SYNCHRONIZE, FALSE, pid);
-                if (hp) {
-                    log_msg("Watching game process %lu until exit...\n", pid);
-                    // Poll with a timeout instead of INFINITE: a zombie
-                    // process we cannot terminate would block injection
-                    // forever, so a NEW game instance never gets the DLL.
-                    for (;;) {
-                        DWORD wr = WaitForSingleObject(hp, 3000);
-                        if (wr == WAIT_OBJECT_0) break;      // exited
-                        if (wr == WAIT_TIMEOUT) {
-                            DWORD cur = find_process_by_name(process_name);
-                            if (cur != pid && cur != 0) break; // new instance appeared
-                        } else break;
-                    }
-                    CloseHandle(hp);
-                    log_msg("Game exited - re-arming watcher.\n");
-                    injected = 0;
-                } else {
-                    log_msg("OpenProcess(SYNCHRONIZE) failed %lu - sleeping.\n", GetLastError());
-                    injected = 0;
+                /* v3.7: watch for exit by polling the process name only
+                 * (no process handle). */
+                log_msg("Watching game %lu via polling...\n", pid);
+                for (;;) {
+                    Sleep(3000);
+                    DWORD cur = find_process_by_name(process_name);
+                    if (cur != pid) break; /* exited or new instance */
                 }
+                log_msg("Game exited - re-arming watcher.\n");
+                injected = 0;
             } else {
                 log_msg("Injection failed - retrying in 10s.\n");
                 injected = 0;
