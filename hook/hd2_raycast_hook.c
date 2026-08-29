@@ -874,11 +874,34 @@ static MeshTableEntry g_mesh_tables[MESH_TABLE_MAX];
 static int g_mesh_table_count = 0;
 static int g_mesh_table_next = 0;   /* next cache slot to fill/evict */
 
+/* Resolve the mesh table file path for a hash. v10.56: no longer hard-coded
+ * to D:\hd2_meshtables - priority: env HD2_MESH_DIR > meshes\ next to the
+ * hook DLL (matches the GitHub repo layout) > legacy D:\hd2_meshtables. */
+static void mesh_table_path(char *full, size_t sz, uint64_t hash) {
+    const char *env = getenv("HD2_MESH_DIR");
+    if (env && env[0]) {
+        snprintf(full, sz, "%s\\mesh_verts_%llu.txt", env, (unsigned long long)hash);
+        return;
+    }
+    HMODULE self = GetModuleHandleA("hd2_raycast_hook.dll");
+    if (self) {
+        char dir[MAX_PATH];
+        if (GetModuleFileNameA(self, dir, sizeof(dir)) > 0) {
+            char *slash = strrchr(dir, '\\');
+            if (slash) {
+                slash[1] = 0;
+                snprintf(full, sz, "%smeshes\\mesh_verts_%llu.txt", dir, (unsigned long long)hash);
+                return;
+            }
+        }
+    }
+    snprintf(full, sz, "D:\\hd2_meshtables\\mesh_verts_%llu.txt", (unsigned long long)hash);
+}
+
 /* Parse ONE mesh_verts_<hash>.txt into e. Returns 1 on success. */
 static int mesh_table_load_file(uint64_t hash, MeshTableEntry *e) {
     char full[MAX_PATH];
-    snprintf(full, sizeof(full), "D:\\hd2_meshtables\\mesh_verts_%llu.txt",
-        (unsigned long long)hash);
+    mesh_table_path(full, sizeof(full), hash);
     FILE *f = fopen(full, "r");
     if (!f) return 0;
     e->hash = hash;
@@ -2980,7 +3003,7 @@ static void install_odsw_hook(void)
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.55"
+#define RC_BUILD_VER "v10.56"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
