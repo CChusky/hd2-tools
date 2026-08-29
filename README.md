@@ -34,6 +34,8 @@ hd2-tools/
     ├── watcher.c           # 自动注入器（游戏启动时注入）
     ├── dll_injector.c      # 手动注入器
     └── build_clean.bat / build_watcher.bat
+└── meshes/             # 离线 mesh 轮廓表（mesh_verts_<hash>.txt, 5668 表）
+                        # 运行时按需加载到 D:\hd2_meshtables\（或 build_all2.py 重新生成）
 ```
 
 ## 构建 Build
