@@ -1402,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.60"
+#define RC_BUILD_VER "v10.62"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1747,14 +1747,10 @@ static void shm_write_ui(void) {
                 float asp = rw / rh;
                 float fp = 1.0f / (float)tan(90.0 * 3.14159265 / 360.0);
 
-                /* ---- v10.55: adaptive mesh normalization ----
-                 * mesh_verts_<hash>.txt tables come from heterogeneous
-                 * sources: per-asset unit scale (cm/m/internal), origin
-                 * offset and coordinate frame (Z-up vs Y-up) all vary.
-                 * Normalize the mesh AABB against the unit's own box
-                 * (world center + half-size) so the outline hugs the real
-                 * model. Falls back to the old pos + R*local projection
-                 * when box data is unavailable/degenerate. */
+                /* ---- v10.62: v10.55 adaptive mesh normalization (RESTORED) ----
+                 * User request: the v10.55 projection (NOT the v10.59 Z-up
+                 * rework, NOT the v10.29 legacy fallback) is the intended
+                 * line-outline logic. Restored verbatim from git 54d886b. */
                 float box_cx = pos[0], box_cy = pos[1], box_cz = pos[2];
                 float box_hx = 0, box_hy = 0, box_hz = 0;
                 int have_box = 0;
@@ -1794,27 +1790,23 @@ static void shm_write_ui(void) {
                 float sclx = 1, scly = 1, sclz = 1;
                 int up_is_z = 1; /* 1=Z-up, 0=Y-up, -1=X-up */
                 if (have_box && mspan[0] > 1e-4f && mspan[1] > 1e-4f && mspan[2] > 1e-4f) {
-                    /* v10.59: engine is Z-up (stingray) - world height is the
-                     * box's Z extent, NOT Y. Old code used 2*box_hy which
-                     * misdetected the mesh up axis and wrecked scale+rotation
-                     * for every normalized entity (broken/no outline). */
-                    float bh = 2.0f * box_hz;
+                    float bh = 2.0f * box_hy; /* box height, world up = Y */
                     float r0 = mspan[0] / bh, r1 = mspan[1] / bh, r2 = mspan[2] / bh;
                     float d0 = (float)fabs(logf(r0)), d1 = (float)fabs(logf(r1)), d2 = (float)fabs(logf(r2));
                     int up = (d0 < d1) ? ((d0 < d2) ? 0 : 2) : ((d1 < d2) ? 1 : 2);
                     up_is_z = (up == 2) ? 1 : (up == 1 ? 0 : -1);
-                    if (up_is_z == 1) {          /* mesh Z = up: x->X, y->Y, z->Z(height) */
+                    if (up_is_z == 1) {          /* mesh Z = up: x->bx, z->bh, y->bz */
                         sclx = (2*box_hx) / mspan[0];
-                        scly = (2*box_hy) / mspan[1];
+                        scly = (2*box_hz) / mspan[1];
                         sclz = bh / mspan[2];
-                    } else if (up_is_z == 0) {   /* mesh Y = up: x->X, z->Y, y->Z(height) */
+                    } else if (up_is_z == 0) {   /* mesh Y = up: direct */
                         sclx = (2*box_hx) / mspan[0];
                         scly = bh / mspan[1];
-                        sclz = (2*box_hy) / mspan[2];
-                    } else {                     /* mesh X = up: y->X, z->Y, x->Z(height) */
+                        sclz = (2*box_hz) / mspan[2];
+                    } else {                     /* mesh X = up: x->bh, y->bz, z->bx */
                         sclx = bh / mspan[0];
-                        scly = (2*box_hx) / mspan[1];
-                        sclz = (2*box_hy) / mspan[2];
+                        scly = (2*box_hz) / mspan[1];
+                        sclz = (2*box_hx) / mspan[2];
                     }
                 } else if (have_box) {
                     have_box = 0; /* degenerate mesh AABB, fall back */
@@ -1833,13 +1825,9 @@ static void shm_write_ui(void) {
                         float ly = (mt->verts[vi][1] - mcenter[1]) * scly;
                         float lz = (mt->verts[vi][2] - mcenter[2]) * sclz;
                         float ux, uy, uz;
-                        /* v10.59: axis map must agree with the scale above -
-                         * mesh up axis -> world Z (height), other axes -> X/Y.
-                         * Old map crossed Y/Z on the Z-up branch, which
-                         * rotated the outline 90 degrees or collapsed it. */
-                        if (up_is_z == 1)      { ux = lx; uy = ly; uz = lz; }
-                        else if (up_is_z == 0) { ux = lx; uy = lz; uz = ly; }
-                        else                   { ux = ly; uy = lz; uz = lx; }
+                        if (up_is_z == 1)      { ux = lx; uy = lz; uz = ly; }
+                        else if (up_is_z == 0) { ux = lx; uy = ly; uz = lz; }
+                        else                   { ux = lz; uy = lx; uz = ly; }
                         wx = box_cx + rot[0]*ux + rot[6]*uz + rot[3]*uy;
                         wy = box_cy + rot[1]*ux + rot[7]*uz + rot[4]*uy;
                         wz = box_cz + rot[2]*ux + rot[8]*uz + rot[5]*uy;
