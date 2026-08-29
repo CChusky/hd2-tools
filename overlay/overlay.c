@@ -75,7 +75,7 @@ static void i18n_default_zh(void) {
     snprintf(T_wait, sizeof T_wait, "等待游戏 (未检测到共享内存)");
     snprintf(T_type, sizeof T_type, "类型");
     snprintf(T_cmd, sizeof T_cmd, "反馈");
-    snprintf(T_hint, sizeof T_hint, "Ctrl+Shift+L 语言 | Ctrl+Shift+H 显隐");
+    snprintf(T_hint, sizeof T_hint, "Ctrl+Shift+L 语言 | Ctrl+Shift+H 显隐 | Ctrl+Shift+Q 退出");
     snprintf(T_scanbox, sizeof T_scanbox, "扫描盒");
 }
 
@@ -152,6 +152,8 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
             i18n_reload();
         } else if (w == 2) { /* toggle visibility */
             ShowWindow(g_hwnd, IsWindowVisible(g_hwnd) ? SW_HIDE : SW_SHOWNA);
+        } else if (w == 3) { /* quit (v1.1) */
+            PostQuitMessage(0);
         }
         return 0;
     case WM_DESTROY:
@@ -163,6 +165,7 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 /* ---------------- window placement (multi-monitor aware) ---------------- */
 static DWORD g_game_pid = 0;
+static DWORD g_game_gone_since = 0; /* v1.1: auto-exit when the game closes */
 
 static BOOL CALLBACK enum_win(HWND h, LPARAM lp) {
     DWORD pid = 0;
@@ -228,6 +231,19 @@ static void win_resize_dib(void) {
 /* 跟随游戏窗口所在显示器（或 config 指定显示器），每 500ms 调用 */
 static void win_place(void) {
     HWND game = find_game_window();
+    /* v1.1: auto-exit - if the game was seen once and then disappears for
+     * 10s (game closed), quit the overlay so it does not linger. */
+    if (g_game_pid) {
+        if (!game) {
+            if (!g_game_gone_since) g_game_gone_since = GetTickCount();
+            else if (GetTickCount() - g_game_gone_since > 10000) {
+                PostQuitMessage(0);
+                return;
+            }
+        } else {
+            g_game_gone_since = 0;
+        }
+    }
     HMONITOR mon = pick_monitor(game);
     MONITORINFO mi = { sizeof(mi) };
     if (!mon || !GetMonitorInfoA(mon, &mi)) {
@@ -262,6 +278,7 @@ static void win_create(HINSTANCE hi) {
     win_place();
     RegisterHotKey(g_hwnd, 1, MOD_CONTROL | MOD_SHIFT, 'L');
     RegisterHotKey(g_hwnd, 2, MOD_CONTROL | MOD_SHIFT, 'H');
+    RegisterHotKey(g_hwnd, 3, MOD_CONTROL | MOD_SHIFT, 'Q');
     ShowWindow(g_hwnd, SW_SHOWNA);
 }
 
