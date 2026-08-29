@@ -128,7 +128,7 @@ _FORCE = False
 # Result is capped (OUTLINE_MIN/MAX) and guaranteed to have a floor so smooth
 # organic models still get enough lines to read as an outline.
 OUTLINE_MIN = 150
-OUTLINE_MAX = 600
+OUTLINE_MAX = 1900          # v10.64: 600 -> 1900 (fx 3800pt / 1900-edge limit)
 OUTLINE_COS = 0.87          # cos(30deg): keep edge if dihedral angle > 30deg
 
 def _tri_normal(verts, t):
@@ -181,6 +181,11 @@ def select_outline_edges(verts, tris):
 def build_pack(pname):
     entries = parse_entries(pname)
     if not entries: return 0, 0, 0
+    # v10.64: skip packs with no unit entries BEFORE unpacking the bundles -
+    # reconstruct_package_from_bundles() reads hundreds of MB per pack and
+    # most packs contain no units at all.
+    if not any(t == UNIT_TYPE for t in entries.values()):
+        return 0, 0, 0
     loader = types.SimpleNamespace(entries=entries)
     loader.pkg = slim.reconstruct_package_from_bundles(pname)
     loader.gpu = slim.reconstruct_package_from_bundles(pname + '.gpu_resources')
