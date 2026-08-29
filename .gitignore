@@ -1,0 +1,17 @@
+﻿# build artifacts
+*.exe
+*.dll
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.map
+*.lock
+*.log
+*.bin
+Debug/
+Release/
+x64/
+# local config
+overlay/config.local.ini
