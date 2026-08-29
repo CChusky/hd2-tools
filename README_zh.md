@@ -80,6 +80,11 @@ injector: build_watcher.bat               -> watcher.exe
 hook 与 overlay 通过共享内存 `Local\HD2RaycastShm`（v4）通信：
 锁定目标（名称 / 哈希 / 距离）、相机参数、投影线框点、命令通道、反馈文本。
 
+## 许可
+
+**仅限非商业用途。** 完整条款见 [LICENSE](LICENSE)。
+未经版权所有者书面许可，不得将本软件用于任何商业目的。
+
 ## 免责声明
 
 本工具用于学习和研究目的。使用模组可能违反游戏服务条款，请自行承担风险。

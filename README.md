@@ -80,6 +80,12 @@ Hotkeys: `Ctrl+Shift+L` language, `Ctrl+Shift+H` show/hide, `Ctrl+Shift+Q` quit.
 hook <-> overlay via shared memory `Local\HD2RaycastShm` (v4):
 locked target (name / hash / distance), camera params, projected wireframe points, command channel, feedback text.
 
+## License
+
+**Non-Commercial Use Only.** See [LICENSE](LICENSE) for full terms.
+The software may not be used for any commercial purpose without prior written
+permission.
+
 ## Disclaimer
 
 For educational/research purposes only. Modding may violate the game's ToS; use at your own risk.
