@@ -74,19 +74,25 @@ static HWND find_process_window(DWORD pid) {
 // Wait until the game is likely fully loaded before injecting. The game's
 // working set fluctuates heavily while loading scenes/animations, so a
 // "stable memory" check is unreliable (it never stabilizes -> never injects).
-// Instead: inject once the main window is visible AND a fixed settle delay
-// has passed (the window only appears after the engine initialized; the extra
-// delay clears the startup path). Timeout caps the total wait.
+// v2: window visible means the engine initialized; inject after a short
+// settle delay (default 5s, configurable via --settle <ms>) instead of the
+// old fixed 20s-from-detect (which wasted most of the wait). Timeout caps
+// the total wait at 90s.
+static DWORD g_settle_ms = 5000;
 static void wait_game_ready(DWORD pid, HANDLE hp) {
-    log_msg("Waiting for game %lu to open its window + settle delay...\n", pid);
+    log_msg("Waiting for game %lu to open its window + %lu ms settle...\n", pid, (unsigned long)g_settle_ms);
     DWORD t0 = GetTickCount();
-    int window_seen = 0;
+    DWORD win_t = 0;
     for (;;) {
         if (WaitForSingleObject(hp, 0) == WAIT_OBJECT_0) return;   // exited
-        if (find_process_window(pid)) window_seen = 1;
-        if (window_seen && (GetTickCount() - t0) > 20000) {        // 20s after detect, window up
-            log_msg("Game %lu ready (window seen, %lu ms elapsed)\n",
-                pid, (unsigned long)(GetTickCount() - t0));
+        if (!win_t && find_process_window(pid)) {
+            win_t = GetTickCount();
+            log_msg("Game %lu window visible\n", pid);
+        }
+        if (win_t && (GetTickCount() - win_t) > g_settle_ms) {     // window + settle
+            log_msg("Game %lu ready (window + %lu ms settle, %lu ms total)\n",
+                pid, (unsigned long)(GetTickCount() - win_t),
+                (unsigned long)(GetTickCount() - t0));
             return;
         }
         if (GetTickCount() - t0 > 90000) {                         // hard cap
@@ -157,6 +163,7 @@ int main(int argc, char *argv[]) {
     int once = 0;
     for (int i = 1; i < argc; i++) {
         if (_stricmp(argv[i], "-once") == 0) once = 1;
+        else if (_stricmp(argv[i], "--settle") == 0 && i + 1 < argc) g_settle_ms = (DWORD)atoi(argv[++i]);
         else if (_stricmp(argv[i], "-h") == 0 || _stricmp(argv[i], "--help") == 0) { log_usage(); return 0; }
         else if (!process_name || strcmp(process_name, "helldivers2.exe") == 0) process_name = argv[i];
         else dll_path = argv[i];
