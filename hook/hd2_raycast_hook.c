@@ -1402,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.61"
+#define RC_BUILD_VER "v10.63"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1775,12 +1775,12 @@ static void shm_write_ui(void) {
                     spx[vi] = sx; spy[vi] = sy; spv[vi] = 1;
                 }
                 /* emit projected edges as endpoint pairs (2 pts per edge).
-                 * Capped at 3072 points (1536 edges) to match HD2HUD.fx's
-                 * rc_mesh[3072] - the effect's D3D11 constant buffer cannot
-                 * exceed 4096 float4 entries (8192 would fail to compile
-                 * and hang the game at startup). */
+                 * v10.63: cap raised 3072 -> 8192 points (4096 edges) - the
+                 * full shm ui_mesh[8192][2] array. The old 3072-point cap
+                 * truncated large outlines (e.g. rock meshes). The ReShade
+                 * fx path stays at its D3D11 cbuffer limit (4096 pts). */
                 uint32_t out = 0;
-                for (uint32_t ei = 0; ei < mt->nedges && out + 1 < 3072; ei++) {
+                for (uint32_t ei = 0; ei < mt->nedges && out + 1 < 8192; ei++) {
                     uint16_t ia = mt->edges[ei][0], ib = mt->edges[ei][1];
                     if (!spv[ia] || !spv[ib]) continue;   /* either endpoint behind cam */
                     s->ui_mesh[out][0] = spx[ia]; s->ui_mesh[out][1] = spy[ia]; out++;
