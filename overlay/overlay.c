@@ -320,6 +320,28 @@ static const char *lookup_name(uint64_t hash) {
     return NULL;
 }
 
+/* v1.3: return the idx-th UTF-8 character of the shm atlas charset (the
+ * label_slots entries are character indices into atlas_chars, same data
+ * the ReShade fx samples from its glyph texture). */
+static wchar_t atlas_char_at(const char *chars, int idx) {
+    const unsigned char *p = (const unsigned char *)chars;
+    int ci = 0;
+    while (*p) {
+        unsigned char c = p[0];
+        int l = 1;
+        if ((c & 0xE0) == 0xC0) l = 2;
+        else if ((c & 0xF0) == 0xE0) l = 3;
+        else if ((c & 0xF8) == 0xF0) l = 4;
+        if (ci == idx) {
+            wchar_t wc[4] = {0};
+            int wn = MultiByteToWideChar(CP_UTF8, 0, (const char *)p, l, wc, 3);
+            return wn > 0 ? wc[0] : L'?';
+        }
+        p += l; ci++;
+    }
+    return L'?';
+}
+
 /* ---------------- render ---------------- */
 static void draw_line(Graphics &g, const float *p1, const float *p2, int w, int h,
                       const Pen &pen) {
@@ -345,18 +367,21 @@ static void render(void) {
     SolidBrush br_green(Color(255, 90, 220, 130));
     SolidBrush br_yellow(Color(255, 240, 200, 80));
 
-    /* ---- 命中线框（模型轮廓 + AABB + 扫描盒）---- */
+    /* ---- 命中线框（模型轮廓 + AABB + 扫描盒）----
+     * v1.3: colors/thickness aligned to HD2HUD.fx - cyan mesh wireframe
+     * (0.2,1.0,0.6,0.98), yellow AABB hidden when a real mesh exists. */
     if (g_shm_ok) {
         if (g_show_line) {
-            Pen pen_line(Color(160, 90, 220, 130), 1.6f);
-            Pen pen_box(Color(140, 255, 200, 80), 1.2f);
+            Pen pen_line(Color(250, 51, 255, 153), 4.0f);  /* fx cyan, ~2.4px dist */
+            Pen pen_box(Color(240, 255, 255, 0), 2.0f);    /* fx yellow */
             Pen pen_scan(Color(110, 120, 180, 255), 1.0f);
             uint32_t mc = g_shm->ui_mesh_count;
             if (mc > 8192) mc = 8192;
             for (uint32_t i = 0; i + 1 < mc; i += 2)
                 draw_line(g, g_shm->ui_mesh[i], g_shm->ui_mesh[i + 1], g_w, g_h, pen_line);
-            /* AABB 角点 0..3 为底面四角、4..7 为顶面（按引擎输出序连线） */
-            if (g_shm->ui_hitbox[0][0] > -9999.0f) {
+            /* AABB 角点 0..3 为底面四角、4..7 为顶面（按引擎输出序连线）。
+             * fx hides the coarse box whenever a real mesh wireframe exists. */
+            if (mc < 4 && g_shm->ui_hitbox[0][0] > -9999.0f) {
                 const float *b = &g_shm->ui_hitbox[0][0];
                 for (int i = 0; i < 4; i++)
                     draw_line(g, b + i * 2, b + ((i + 1) % 4) * 2, g_w, g_h, pen_box);
@@ -382,61 +407,69 @@ static void render(void) {
         }
     }
 
-    /* ---- 信息面板 ---- */
+    /* ---- v1.3: fx-style text label ----
+     * Rebuilt from the shm atlas slots (identical chars to HD2HUD.fx) and
+     * rendered anchored at the hit-box TOP-CENTER: white glyphs on
+     * translucent-black per-char backdrops, multi-line, scaled by screen
+     * height (S.y/2160, 48px atlas cell / 34px bold glyph) - matching the
+     * local ReShade build's visual output. */
     if (g_show_panel) {
-        int pw = (int)(360 * g_scale), ph = (int)(150 * g_scale);
-        SolidBrush bg(Color(170, 16, 16, 18));
-        g.FillRectangle(&bg, g_panel_x, g_panel_y, pw, ph);
-        Pen border(Color(140, 255, 255, 255), 1.0f);
-        g.DrawRectangle(&border, g_panel_x, g_panel_y, pw, ph);
-
-        int cx = g_panel_x + 12, cy = g_panel_y + 10;
-        int line_h = (int)(22 * g_scale);
-
-        /* 标题 */
-        g.DrawString(utf8w(T_title, wbuf, 512), -1, &font_title,
-                     PointF((REAL)cx, (REAL)cy), &br_text);
-        cy += (int)(26 * g_scale);
-
         if (!g_shm_ok) {
+            /* no game data yet: small waiting hint, top-left */
+            SolidBrush wait_bg(Color(140, 0, 0, 0));
+            g.FillRectangle(&wait_bg, 8, 8, 280, 30);
             g.DrawString(utf8w(T_wait, wbuf, 512), -1, &font_body,
-                         PointF((REAL)cx, (REAL)cy), &br_yellow);
-        } else {
-            uint32_t flags = g_shm->flags;
-            if (flags & 1) {
-                const char *nm = g_shm->hit_name;
-                const char *ln = lookup_name(g_shm->hit_hash64);
-                char line[512];
-                if (ln) {
-                    snprintf(line, sizeof line, "%s: %s (%s)", T_locked, nm, ln);
-                } else {
-                    snprintf(line, sizeof line, "%s: %s", T_locked, nm);
+                         PointF(14, 12), &br_yellow);
+        } else if ((g_shm->flags & 1) && g_shm->label_count > 0) {
+            float sc = (float)g_h / 2160.0f;
+            float sch = 48.0f * sc;                    /* atlas cell on screen */
+            float row_h = sch + 4.0f;
+            float glyph = 34.0f * sc;                  /* fx: ATLAS_CELL-14 bold */
+            Font fx_font(L"Microsoft YaHei", glyph, FontStyleBold, UnitPixel);
+            SolidBrush br_white(Color(255, 255, 255, 235)); /* fx 1,1,0.92 */
+            SolidBrush br_back(Color(140, 0, 0, 0));        /* fx 0,0,0,0.55 */
+
+            /* anchor: hit-box top-center (same as the addon's label_cfg) */
+            float ax = 0, ay = 1e9f;
+            int nv = 0;
+            for (int i = 0; i < 8; i++) {
+                if (g_shm->ui_hitbox[i][0] >= 0.0f) {
+                    ax += g_shm->ui_hitbox[i][0];
+                    if (g_shm->ui_hitbox[i][1] < ay) ay = g_shm->ui_hitbox[i][1];
+                    nv++;
                 }
-                g.DrawString(utf8w(line, wbuf, 512), -1, &font_body,
-                             PointF((REAL)cx, (REAL)cy), &br_green);
-                cy += line_h;
-                snprintf(line, sizeof line, "%s: %.1f m", T_distance, (double)g_shm->hit_dist);
-                g.DrawString(utf8w(line, wbuf, 512), -1, &font_body,
-                             PointF((REAL)cx, (REAL)cy), &br_text);
-                cy += line_h;
-                snprintf(line, sizeof line, "%s: 0x%016llX", T_type,
-                         (unsigned long long)g_shm->hit_hash64);
-                g.DrawString(utf8w(line, wbuf, 512), -1, &font_small,
-                             PointF((REAL)cx, (REAL)cy), &br_dim);
-                cy += (int)(20 * g_scale);
-            } else {
-                g.DrawString(utf8w(T_none, wbuf, 512), -1, &font_body,
-                             PointF((REAL)cx, (REAL)cy), &br_dim);
-                cy += line_h;
             }
-            /* 命令反馈 */
-            if (g_shm->cmd_feedback[0]) {
-                g.DrawString(utf8w(T_cmd, wbuf, 512), -1, &font_small,
-                             PointF((REAL)cx, (REAL)cy), &br_dim);
-                cy += (int)(18 * g_scale);
-                g.DrawString(utf8w(g_shm->cmd_feedback, wbuf, 512), -1, &font_small,
-                             PointF((REAL)cx, (REAL)cy), &br_yellow);
-                cy += (int)(18 * g_scale);
+            if (nv >= 4) {
+                ax = ax / nv * g_w;
+                ay = ay * g_h;
+                int n = g_shm->label_count;
+                if (n > 96) n = 96;
+                /* pass 1: rows + widest row (screen px, real advances) */
+                int nrows = 1;
+                float crow = 0, maxrow = 0;
+                for (int i = 0; i < n; i++) {
+                    int32_t slot = g_shm->label_slots[i];
+                    if (slot == -2) { if (crow > maxrow) maxrow = crow; crow = 0; nrows++; }
+                    else if (slot >= 0) crow += g_shm->label_widths[i] * sc;
+                    else break;
+                }
+                if (crow > maxrow) maxrow = crow;
+                float block_h = nrows * sch + (nrows - 1) * 4.0f;
+                float x0 = ax - maxrow * 0.5f;
+                float y0 = ay - block_h - 8.0f;
+                float cx = x0, cy = y0;
+                for (int i = 0; i < n; i++) {
+                    int32_t slot = g_shm->label_slots[i];
+                    if (slot == -2) { cy += row_h; cx = x0; continue; }
+                    if (slot < 0) break;
+                    float cwid = g_shm->label_widths[i] * sc;
+                    wchar_t ch = atlas_char_at(g_shm->atlas_chars, slot);
+                    if (cwid > 0.5f && ch) {
+                        g.FillRectangle(&br_back, cx, cy, cwid, sch);
+                        g.DrawString(&ch, 1, &fx_font, PointF(cx, cy + 1.0f), &br_white);
+                    }
+                    cx += cwid;
+                }
             }
         }
     }
