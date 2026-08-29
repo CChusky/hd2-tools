@@ -731,14 +731,40 @@ static MeshTableEntry g_mesh_tables[MESH_TABLE_MAX];
 static int g_mesh_table_count = 0;
 static int g_mesh_table_next = 0;   /* next cache slot to fill/evict */
 
-/* Resolve the mesh table file path for a hash. v10.56: no longer hard-coded
- * to D:\hd2_meshtables - priority: env HD2_MESH_DIR > meshes\ next to the
- * hook DLL (matches the GitHub repo layout) > legacy D:\hd2_meshtables. */
+/* Resolve the mesh table file path for a hash (candidate only - used by
+ * diagnostics/logging). Actual loading tries every location in order. */
 static void mesh_table_path(char *full, size_t sz, uint64_t hash) {
     const char *env = getenv("HD2_MESH_DIR");
     if (env && env[0]) {
         snprintf(full, sz, "%s\\mesh_verts_%llu.txt", env, (unsigned long long)hash);
         return;
+    }
+    char dir[MAX_PATH];
+    HMODULE self = GetModuleHandleA("hd2_raycast_hook.dll");
+    if (self && GetModuleFileNameA(self, dir, sizeof(dir)) > 0) {
+        char *slash = strrchr(dir, '\\');
+        if (slash) {
+            slash[1] = 0;
+            snprintf(full, sz, "%smeshes\\mesh_verts_%llu.txt", dir, (unsigned long long)hash);
+            return;
+        }
+    }
+    snprintf(full, sz, "D:\\hd2_meshtables\\mesh_verts_%llu.txt", (unsigned long long)hash);
+}
+
+/* v10.60: try EVERY mesh-table location in priority order and return the
+ * first FILE* that opens. The old code built only ONE candidate path
+ * (GetModuleHandleA always succeeds, so the DLL-adjacent meshes\ folder
+ * was chosen unconditionally and the legacy D:\hd2_meshtables fallback
+ * never ran) - any unpack where the DLL had no meshes\ next to it silently
+ * skipped every outline. */
+static FILE *mesh_table_open(uint64_t hash, char *full, size_t sz) {
+    char cand[MAX_PATH];
+    const char *env = getenv("HD2_MESH_DIR");
+    if (env && env[0]) {
+        snprintf(cand, sizeof(cand), "%s\\mesh_verts_%llu.txt", env, (unsigned long long)hash);
+        FILE *f = fopen(cand, "r");
+        if (f) { snprintf(full, sz, "%s", cand); return f; }
     }
     HMODULE self = GetModuleHandleA("hd2_raycast_hook.dll");
     if (self) {
@@ -747,19 +773,22 @@ static void mesh_table_path(char *full, size_t sz, uint64_t hash) {
             char *slash = strrchr(dir, '\\');
             if (slash) {
                 slash[1] = 0;
-                snprintf(full, sz, "%smeshes\\mesh_verts_%llu.txt", dir, (unsigned long long)hash);
-                return;
+                snprintf(cand, sizeof(cand), "%smeshes\\mesh_verts_%llu.txt", dir, (unsigned long long)hash);
+                FILE *f = fopen(cand, "r");
+                if (f) { snprintf(full, sz, "%s", cand); return f; }
             }
         }
     }
-    snprintf(full, sz, "D:\\hd2_meshtables\\mesh_verts_%llu.txt", (unsigned long long)hash);
+    snprintf(cand, sizeof(cand), "D:\\hd2_meshtables\\mesh_verts_%llu.txt", (unsigned long long)hash);
+    FILE *f = fopen(cand, "r");
+    if (f) { snprintf(full, sz, "%s", cand); return f; }
+    return NULL;
 }
 
 /* Parse ONE mesh_verts_<hash>.txt into e. Returns 1 on success. */
 static int mesh_table_load_file(uint64_t hash, MeshTableEntry *e) {
     char full[MAX_PATH];
-    mesh_table_path(full, sizeof(full), hash);
-    FILE *f = fopen(full, "r");
+    FILE *f = mesh_table_open(hash, full, sizeof(full));
     if (!f) return 0;
     e->hash = hash;
     e->nverts = 0;
@@ -831,13 +860,16 @@ static uint64_t g_mesh_pending[MESH_PENDING_MAX];
 static int g_mesh_pending_count = 0;
 static int g_mesh_builder_running = 0;
 
-static void mesh_pending_add(uint64_t hash) {
-    if (!hash) return;
-    if (mesh_table_find(hash)) return;
+static int mesh_pending_add(uint64_t hash) {
+    if (!hash) return 0;
+    if (mesh_table_find(hash)) return 0;
     for (int i = 0; i < g_mesh_pending_count; i++)
-        if (g_mesh_pending[i] == hash) return;
-    if (g_mesh_pending_count < MESH_PENDING_MAX)
+        if (g_mesh_pending[i] == hash) return 0;
+    if (g_mesh_pending_count < MESH_PENDING_MAX) {
         g_mesh_pending[g_mesh_pending_count++] = hash;
+        return 1;
+    }
+    return 0;
 }
 
 // Write pending hashes to the request file (one dec per line).
@@ -1370,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.59"
+#define RC_BUILD_VER "v10.60"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1624,8 +1656,8 @@ static void shm_write_ui(void) {
         if (!mt) {
             /* hit an entity with no offline mesh table yet - queue it so the
              * on-demand builder can generate it while the game is unfocused */
-            mesh_pending_add(s->hit_hash64);
-            mesh_pending_save();
+            if (mesh_pending_add(s->hit_hash64))
+                mesh_pending_save();
             /* v10.58: the previous code was silent about missing tables,
              * which made "outline didn't draw" impossible to diagnose.
              * Log the miss with the resolved path, throttled to 3s. */
@@ -3244,6 +3276,7 @@ static void maybe_log_gui_text(lua_State *L, int nargs) {
 static int __fastcall hk_lua_pcall(lua_State *L, int nargs, int nresults, int errfunc) {
     g_L = L;
     InterlockedIncrement(&g_pcall_count);
+    rc_print_version_banner();
 
     // Lazy-load the persisted crash-skip registry here (NOT in DllMain: file
     // I/O inside DllMain can deadlock the loader and the inject never lands).
