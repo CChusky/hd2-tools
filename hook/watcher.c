@@ -112,7 +112,7 @@ static HWND find_process_window(DWORD pid) {
 // v2: window visible means the engine initialized; inject after a short
 // settle delay (default 5s, configurable via --settle <ms>) instead of the
 // old fixed 20s-from-detect (which wasted most of the wait). Timeout caps
-// the total wait at 90s.
+// the total wait at 45s (v3: was 90s, user chose 45s).
 static DWORD g_settle_ms = 5000;
 static void wait_game_ready(DWORD pid, HANDLE hp) {
     log_msg("Waiting for game %lu to open its window + %lu ms settle...\n", pid, (unsigned long)g_settle_ms);
@@ -130,8 +130,8 @@ static void wait_game_ready(DWORD pid, HANDLE hp) {
                 (unsigned long)(GetTickCount() - t0));
             return;
         }
-        if (GetTickCount() - t0 > 90000) {                         // hard cap
-            log_msg("Game %lu load-timeout (90s), injecting anyway\n", pid);
+        if (GetTickCount() - t0 > 45000) {                         // hard cap 45s
+            log_msg("Game %lu load-timeout (45s), injecting anyway\n", pid);
             return;
         }
         Sleep(2000);
