@@ -18,6 +18,12 @@
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "advapi32.lib")
 
+/* v3.1: require elevation - SeDebugPrivilege only works in an elevated
+ * process; the Themida-protected game denies OpenProcess (err 5) otherwise.
+ * Elevation manifest is set via the linker flag /MANIFESTUAC:level=
+ * 'requireAdministrator' in the build script (not a #pragma - MSVC ignores
+ * /MANIFESTUAC in pragma linker comments). */
+
 static FILE *g_log = NULL;
 static void log_msg(const char *fmt, ...); /* forward decl (v3) */
 
