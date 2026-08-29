@@ -294,7 +294,11 @@ int main(int argc, char *argv[]) {
 
     g_log = fopen("watcher_log.txt", "a");
     log_msg("=== HD2 watcher started (resident) ===\n");
-    log_msg("SeDebugPrivilege: %s\n", enable_debug_priv() ? "OK" : "FAIL (run as admin if injection is denied)");
+    /* v3.6: do NOT enable SeDebugPrivilege - Themida flags callers that hold
+     * it as debugger-like and denies their OpenProcess (err 5). dll_injector,
+     * which always works, never touches privilege APIs. Keep this log line so
+     * we can confirm the tool no longer enables it. */
+    log_msg("SeDebugPrivilege: disabled (v3.6 - mirrors dll_injector)\n");
     log_msg("Target: %s | DLL: %s\n", process_name, dll_path);
     if (GetFileAttributesA(dll_path) == INVALID_FILE_ATTRIBUTES) {
         log_msg("ERROR: DLL not found: %s\n", dll_path);
