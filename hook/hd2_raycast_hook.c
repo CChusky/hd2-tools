@@ -1402,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.62"
+#define RC_BUILD_VER "v10.61"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1747,97 +1747,23 @@ static void shm_write_ui(void) {
                 float asp = rw / rh;
                 float fp = 1.0f / (float)tan(90.0 * 3.14159265 / 360.0);
 
-                /* ---- v10.62: v10.55 adaptive mesh normalization (RESTORED) ----
-                 * User request: the v10.55 projection (NOT the v10.59 Z-up
-                 * rework, NOT the v10.29 legacy fallback) is the intended
-                 * line-outline logic. Restored verbatim from git 54d886b. */
-                float box_cx = pos[0], box_cy = pos[1], box_cz = pos[2];
-                float box_hx = 0, box_hy = 0, box_hz = 0;
-                int have_box = 0;
-                g_quiet_exec = 1; g_exec_bypass = 1;
-                exec_lua(
-                    "local u = _G.rc_hit_unit "
-                    "if u then "
-                    "  local ok_b, b1, b2 = pcall(stingray.Unit.box, u) "
-                    "  if ok_b and b1 and b2 and b1.x and b2.x then "
-                    "    if b2.x >= b1.x and b2.y >= b1.y and b2.z >= b1.z then "
-                    "      return string.format('%.4f %.4f %.4f %.4f %.4f %.4f', (b1.x+b2.x)/2,(b1.y+b2.y)/2,(b1.z+b2.z)/2,(b2.x-b1.x)/2,(b2.y-b1.y)/2,(b2.z-b1.z)/2) "
-                    "    else "
-                    "      return string.format('%.4f %.4f %.4f %.4f %.4f %.4f', b1.x,b1.y,b1.z,b2.x/2,b2.y/2,b2.z/2) "
-                    "    end "
-                    "  end "
-                    "end "
-                    "return ''"
-                );
-                g_quiet_exec = 0; g_exec_bypass = 0;
-                if (sscanf(g_last_result, "%f %f %f %f %f %f",
-                    &box_cx, &box_cy, &box_cz, &box_hx, &box_hy, &box_hz) == 6) {
-                    if (box_hx > 0.02f && box_hy > 0.02f && box_hz > 0.02f &&
-                        box_hx < 500.0f && box_hy < 500.0f && box_hz < 500.0f)
-                        have_box = 1;
-                }
-                float mmin[3] = {1e9f,1e9f,1e9f}, mmax[3] = {-1e9f,-1e9f,-1e9f};
-                if (have_box) {
-                    for (uint32_t vi = 0; vi < mt->nverts; vi++) {
-                        float x = mt->verts[vi][0], y = mt->verts[vi][1], z = mt->verts[vi][2];
-                        if (x < mmin[0]) mmin[0] = x; if (x > mmax[0]) mmax[0] = x;
-                        if (y < mmin[1]) mmin[1] = y; if (y > mmax[1]) mmax[1] = y;
-                        if (z < mmin[2]) mmin[2] = z; if (z > mmax[2]) mmax[2] = z;
-                    }
-                }
-                float mcenter[3] = {(mmin[0]+mmax[0])/2,(mmin[1]+mmax[1])/2,(mmin[2]+mmax[2])/2};
-                float mspan[3] = {mmax[0]-mmin[0],mmax[1]-mmin[1],mmax[2]-mmin[2]};
-                float sclx = 1, scly = 1, sclz = 1;
-                int up_is_z = 1; /* 1=Z-up, 0=Y-up, -1=X-up */
-                if (have_box && mspan[0] > 1e-4f && mspan[1] > 1e-4f && mspan[2] > 1e-4f) {
-                    float bh = 2.0f * box_hy; /* box height, world up = Y */
-                    float r0 = mspan[0] / bh, r1 = mspan[1] / bh, r2 = mspan[2] / bh;
-                    float d0 = (float)fabs(logf(r0)), d1 = (float)fabs(logf(r1)), d2 = (float)fabs(logf(r2));
-                    int up = (d0 < d1) ? ((d0 < d2) ? 0 : 2) : ((d1 < d2) ? 1 : 2);
-                    up_is_z = (up == 2) ? 1 : (up == 1 ? 0 : -1);
-                    if (up_is_z == 1) {          /* mesh Z = up: x->bx, z->bh, y->bz */
-                        sclx = (2*box_hx) / mspan[0];
-                        scly = (2*box_hz) / mspan[1];
-                        sclz = bh / mspan[2];
-                    } else if (up_is_z == 0) {   /* mesh Y = up: direct */
-                        sclx = (2*box_hx) / mspan[0];
-                        scly = bh / mspan[1];
-                        sclz = (2*box_hz) / mspan[2];
-                    } else {                     /* mesh X = up: x->bh, y->bz, z->bx */
-                        sclx = bh / mspan[0];
-                        scly = (2*box_hz) / mspan[1];
-                        sclz = (2*box_hx) / mspan[2];
-                    }
-                } else if (have_box) {
-                    have_box = 0; /* degenerate mesh AABB, fall back */
-                }
-
+                /* v10.61: REVERTED to the v10.54 line-outline projection
+                 * (world = pos + R * local). The v10.55 "adaptive mesh
+                 * normalization" (mesh AABB vs Unit.box alignment) was built
+                 * to fix the 10-hash offset/scale/rotation reports but was
+                 * never field-tested; on the first real run the outline
+                 * placement is completely wrong, so it is removed. */
                 /* project every vertex once */
                 float spx[MESH_VERTS_MAX], spy[MESH_VERTS_MAX];
                 unsigned char spv[MESH_VERTS_MAX];
                 for (uint32_t vi = 0; vi < mt->nverts; vi++) {
                     spv[vi] = 0;
                     float wx, wy, wz;
-                    if (have_box) {
-                        /* normalized local -> unit-local -> world:
-                         * world = box_center + R * axis_map((local-mid)*scale) */
-                        float lx = (mt->verts[vi][0] - mcenter[0]) * sclx;
-                        float ly = (mt->verts[vi][1] - mcenter[1]) * scly;
-                        float lz = (mt->verts[vi][2] - mcenter[2]) * sclz;
-                        float ux, uy, uz;
-                        if (up_is_z == 1)      { ux = lx; uy = lz; uz = ly; }
-                        else if (up_is_z == 0) { ux = lx; uy = ly; uz = lz; }
-                        else                   { ux = lz; uy = lx; uz = ly; }
-                        wx = box_cx + rot[0]*ux + rot[6]*uz + rot[3]*uy;
-                        wy = box_cy + rot[1]*ux + rot[7]*uz + rot[4]*uy;
-                        wz = box_cz + rot[2]*ux + rot[8]*uz + rot[5]*uy;
-                    } else {
-                        /* v10.29 legacy path: world = pos + R * local (Z-up) */
-                        float lx = mt->verts[vi][0], ly = mt->verts[vi][1], lz = mt->verts[vi][2];
-                        wx = pos[0] + rot[0]*lx + rot[6]*ly + rot[3]*lz;
-                        wy = pos[1] + rot[1]*lx + rot[7]*ly + rot[4]*lz;
-                        wz = pos[2] + rot[2]*lx + rot[8]*ly + rot[5]*lz;
-                    }
+                    /* v10.29 legacy path: world = pos + R * local (Z-up) */
+                    float lx = mt->verts[vi][0], ly = mt->verts[vi][1], lz = mt->verts[vi][2];
+                    wx = pos[0] + rot[0]*lx + rot[6]*ly + rot[3]*lz;
+                    wy = pos[1] + rot[1]*lx + rot[7]*ly + rot[4]*lz;
+                    wz = pos[2] + rot[2]*lx + rot[8]*ly + rot[5]*lz;
                     float cx = wx - cam[0], cy = wy - cam[1], cz = wz - cam[2];
                     float vz = cx*fwd[0] + cy*fwd[1] + cz*fwd[2];
                     if (vz <= 0.05f) continue;
