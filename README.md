@@ -7,7 +7,8 @@ Helldivers 2 modding tools: external target-lock overlay + in-game hook.
 ## Features
 
 - **F4 ray-cast lock-on**: aim at a target, press F4 - identifies units / vehicles / interactables in real time
-- **Real-time tracking**: label + wireframe outline follow the target as it moves
+- **Real-time tracking**: label + wireframe outline follow the target as it moves (same position source, anti-teleport)
+- **Numpad1 proximity scan**: lists nearby entity candidate boxes; aim at a box then press F4 to lock that exact entity (box-pick)
 - **External transparent overlay**: target info shown in a standalone window (no ReShade / DebugView required)
 - **Bilingual UI**: Simplified Chinese / English, hotkey switch
 - **Multi-monitor aware**: overlay follows the monitor the game window is on

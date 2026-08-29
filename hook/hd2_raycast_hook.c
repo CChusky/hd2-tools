@@ -1402,7 +1402,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.64"
+#define RC_BUILD_VER "v10.75"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -2014,17 +2014,17 @@ static void scan_nearby_units(void) {
     {
         exec_lua(
             "if not rc_add_box then "
-            "rc_add_box = function(x, y, z, hx2, hy2, hz2, d2) "
+            "rc_add_box = function(x, y, z, hx2, hy2, hz2, d2, i) "
             "  local b = _G.rc_scan_boxes "
             "  if not b then return end "
             "  local n = #b "
             "  if n < 64 then "
             "    local pos = n + 1 "
             "    for i = 1, n do if b[i][7] > d2 then pos = i break end end "
-            "    table.insert(b, pos, {x, y, z, hx2, hy2, hz2, d2}) "
+            "    table.insert(b, pos, {x, y, z, hx2, hy2, hz2, d2, i}) "
             "  else "
             "    if d2 < b[64][7] then "
-            "      b[64] = {x, y, z, hx2, hy2, hz2, d2} "
+            "      b[64] = {x, y, z, hx2, hy2, hz2, d2, i} "
             "      for i = 63, 1, -1 do "
             "        if b[i][7] > b[i+1][7] then b[i], b[i+1] = b[i+1], b[i] else break end "
             "      end "
@@ -2032,7 +2032,7 @@ static void scan_nearby_units(void) {
             "  end "
             "end "
             "end");
-        char def[4096];
+        char def[8192];
         snprintf(def, sizeof(def),
             "function rc_scan_probe(i0) "
             "local ents = _G.rc_ents "
@@ -2049,29 +2049,40 @@ static void scan_nearby_units(void) {
             "local hexfull = h:sub(5, -2) "
             "-- world center + half-size for scan box (world-anchor space)\n"
             "local px, py, pz, hx2, hy2, hz2\n"
-            "-- world_position(u,1) FIRST (node=1 = root scene-graph node ->\n"
-            "-- real world coords, verified in F4). box/local_position are\n"
-            "-- local-space garbage for most HD2 units, keep as fallback only.\n"
-            "local ok_wp1, wp1 = pcall(S.Unit.world_position, u, 1)\n"
-            "if ok_wp1 and wp1 and wp1.x and (math.abs(wp1.x) > 1 or math.abs(wp1.y) > 1 or math.abs(wp1.z) > 1) then\n"
-            "  px, py, pz = wp1.x, wp1.y, wp1.z\n"
-            "end\n"
-            "if not px then\n"
-            "  local ok_b2, bA, bB = pcall(S.Unit.box, u)\n"
-            "  if ok_b2 and bA and bA.x then\n"
-            "    if bB and bB.x and bB.x >= bA.x and bB.y >= bA.y and bB.z >= bA.z then\n"
+            "-- v10.71+: Unit.box FIRST (safe order, no scan freeze). Full\n"
+            "-- 4-mode box parse copied from F4 (minmax/center/struct/posfb).\n"
+            "local ok_b2, bA, bB = pcall(S.Unit.box, u)\n"
+            "if ok_b2 and bA and bA.x ~= nil then\n"
+            "  if bB and bB.x ~= nil then\n"
+            "    if bB.x >= bA.x and bB.y >= bA.y and bB.z >= bA.z then\n"
             "      px = (bA.x+bB.x)/2; py = (bA.y+bB.y)/2; pz = (bA.z+bB.z)/2\n"
             "      hx2 = (bB.x-bA.x)/2; hy2 = (bB.y-bA.y)/2; hz2 = (bB.z-bA.z)/2\n"
             "    else\n"
             "      px, py, pz = bA.x, bA.y, bA.z\n"
             "      hx2, hy2, hz2 = bB.x/2, bB.y/2, bB.z/2\n"
             "    end\n"
+            "  elseif bA.center then\n"
+            "    px, py, pz = bA.center.x, bA.center.y, bA.center.z\n"
+            "    hx2, hy2, hz2 = bA.size.x/2, bA.size.y/2, bA.size.z/2\n"
             "  end\n"
             "end\n"
-            "if not px then\n"
+            "-- v10.73: many units return LOCAL-space boxes (small coords).\n"
+            "-- Detect a local center (|c| < 10 on all axes) and fall back to\n"
+            "-- world_position for exactly those units - world boxes stay as-is.\n"
+            "local localish = (not px) or (math.abs(px) < 10 and math.abs(py) < 10 and math.abs(pz) < 10)\n"
+            "if localish then\n"
+            "  local ok_wp1, wp1 = pcall(S.Unit.world_position, u, 1)\n"
+            "  if ok_wp1 and wp1 and wp1.x and (math.abs(wp1.x) > 1 or math.abs(wp1.y) > 1 or math.abs(wp1.z) > 1) then\n"
+            "    px, py, pz = wp1.x, wp1.y, wp1.z\n"
+            "    hx2, hy2, hz2 = 0.25, 0.25, 0.25\n"
+            "  end\n"
+            "end\n"
+            "-- degenerate center fallback + reject (0,0,0)/(1,1,1) fake centers\n"
+            "if (not px) or ((px == 0 and py == 0 and pz == 0) or (px == 1 and py == 1 and pz == 1)) then\n"
             "  local ok_np, np = pcall(S.Unit.local_position, u, 0)\n"
             "  if ok_np and np and np.x then px, py, pz = np.x, np.y, np.z end\n"
             "end\n"
+            "if not px then return 'nobox' end\n"
             "-- point-sized degenerate box = player self / attached helpers\n"
             "-- (F4's 'pointbox' rule). Hide it before the 0.25 default below\n"
             "-- so the player's own body never gets a screen-space box.\n"
@@ -2102,10 +2113,10 @@ static void scan_nearby_units(void) {
             "          local dr2 = (px-prx)^2 + (py-pry)^2 + (pz-prz)^2\n"
             "          if dr2 < 4.0 then return 'selfgear' end\n"
             "        end\n"
-            "        rc_add_box(px, py, pz, hx2, hy2, hz2, d2) "
+            "        rc_add_box(px, py, pz, hx2, hy2, hz2, d2, i0) "
             "end\n"
             "    else\n"
-            "      rc_add_box(px, py, pz, hx2, hy2, hz2, 1e18)\n"
+            "      rc_add_box(px, py, pz, hx2, hy2, hz2, 1e18, i0)\n"
             "    end\n"
             "  end\n"
             "end\n"
@@ -2257,8 +2268,21 @@ static void scan_nearby_units(void) {
     // Publish scan boxes to the ReShade addon (shared memory)
     shm_write_boxes();
 
-    // Re-enable Lua GC (was stopped at scan start); SEH-protected with retry.
-    gc_restart_safe();
+    // Re-enable Lua GC (was stopped at scan start). v10.70: sweeping the
+    // backlog here in small SEH-guarded steps prevents the engine's next
+    // automatic collect from freezing the main thread ("GC storm").
+    __try {
+        if (f_lua_gc && g_L) {
+            f_lua_gc(g_L, LUA_GCSETPAUSE, 120);
+            f_lua_gc(g_L, LUA_GCRESTART, 0);
+            for (int k = 0; k < 60; k++) {
+                f_lua_gc(g_L, LUA_GCSTEP, 80);
+            }
+        }
+        log_msg("%s", "[RAYCAST] GC restart+sweep done\n");
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        log_msg("[RAYCAST] GC restart SEH 0x%08X\n", GetExceptionCode());
+    }
 }
 
 // MurmurHash2 64-bit - the Stingray IdString64 hash. m/r/seed match the
@@ -2421,9 +2445,12 @@ static void track_locked_target(void) {
             "if not S then return 0, 'nostingray' end "
             "local ok_a, a = pcall(S.Unit.alive, u) "
             "if not ok_a or not a then return 0, ok_a and 'dead' or 'alive-err' end "
-            "local ok_w, w = pcall(S.Unit.world_position, u, 1) "
-            "if not ok_w or not w or not w.x then return 0, ok_w and 'nowp' or 'wp-err' end "
-            "local wcx, wcy, wcz = w.x, w.y, w.z "
+            "-- v10.73: world_position(u,1) FIRST - it is the same source the "
+            "-- green mesh outline uses (which stays correct), so the box must "
+            "-- follow it. Guard against the rare garbage/far jump (e.g. 986m "
+            "-- teleport) with a sanity check vs the camera; box center is the "
+            "-- fallback when world_position is unusable. "
+            "local wcx, wcy, wcz "
             "local ok_c, c = pcall(S.Application.main_world) "
             "local ok_p, pose = pcall(S.World.debug_camera_pose, ok_c and c or nil) "
             "local cmx, cmy, cmz = 0, 0, 0 "
@@ -2431,6 +2458,33 @@ static void track_locked_target(void) {
             "  local M = S.Matrix4x4 "
             "  local t = M.translation(pose) "
             "  cmx, cmy, cmz = t.x, t.y, t.z "
+            "end "
+            "local ok_w, w = pcall(S.Unit.world_position, u, 1) "
+            "if ok_w and w and w.x then "
+            "  local dx, dy, dz = w.x-cmx, w.y-cmy, w.z-cmz "
+            "  local cd2 = dx*dx + dy*dy + dz*dz "
+            "  local zero1 = (w.x == 0 and w.y == 0 and w.z == 0) "
+            "  local one1 = (w.x == 1 and w.y == 1 and w.z == 1) "
+            "  if cd2 > 1.0 and cd2 < 4000000 and not zero1 and not one1 then "
+            "    wcx, wcy, wcz = w.x, w.y, w.z "
+            "  end "
+            "end "
+            "if not wcx then "
+            "  local ok_b, b1, b2 = pcall(S.Unit.box, u) "
+            "  if ok_b and b1 and b1.x and b2 and b2.x then "
+            "    if b2.x >= b1.x and b2.y >= b1.y and b2.z >= b1.z then "
+            "      wcx, wcy, wcz = (b1.x+b2.x)/2, (b1.y+b2.y)/2, (b1.z+b2.z)/2 "
+            "    else "
+            "      wcx, wcy, wcz = b1.x, b1.y, b1.z "
+            "    end "
+            "  end "
+            "end "
+            "if not wcx then return 0, 'nowp' end "
+            "local ok_p2, pose2 = pcall(S.World.debug_camera_pose, ok_c and c or nil) "
+            "if ok_p2 and pose2 then "
+            "  local M2 = S.Matrix4x4 "
+            "  local t2 = M2.translation(pose2) "
+            "  cmx, cmy, cmz = t2.x, t2.y, t2.z "
             "end "
             "_G.rc_hitbox = {{wcx-0.5,wcy-0.5,wcz-0.5},{wcx+0.5,wcy-0.5,wcz-0.5},{wcx-0.5,wcy+0.5,wcz-0.5},{wcx+0.5,wcy+0.5,wcz-0.5},{wcx-0.5,wcy-0.5,wcz+0.5},{wcx+0.5,wcy-0.5,wcz+0.5},{wcx-0.5,wcy+0.5,wcz+0.5},{wcx+0.5,wcy+0.5,wcz+0.5}} "
             "_G.rc_vx, _G.rc_vy, _G.rc_vz = wcx, wcy, wcz "
@@ -2498,6 +2552,7 @@ static void track_locked_target(void) {
 }
 
 // ============================================================
+static int pick_and_lock_scan_box(void);  /* v10.66: Numpad1 box pick */
 static void do_raycast(void) {
     log_msg("%s", "[RAYCAST] === F4: Raycast ===\n");
     load_hash_table();
@@ -2590,6 +2645,14 @@ static void do_raycast(void) {
     // object inside the wide cone can never steal the wireframe from the
     // object the ray actually passes through.
     exec_lua("_G.rc_vd = -1 _G.rc_hitbox = nil _G.rc_hit_d = nil _G.rc_cone_d = nil _G.rc_cone_hitbox = nil _G.rc_cone_vx = nil _G.rc_cone_vy = nil _G.rc_cone_vz = nil _G.rc_cone_unit = nil");
+
+    /* v10.66: Numpad1 scan-box pick. If the player aims at one of the
+     * yellow candidate boxes (screen-center nearest within tolerance),
+     * lock that exact entity and skip the full ray scan. */
+    if (pick_and_lock_scan_box()) {
+        log_msg("[RAYCAST] box-pick: skipping entity scan\n");
+        goto scan_done;
+    }
 
     // Per-entity probe: define the probe ONCE through the SEH-protected
     // exec_lua path (a raw luaL_loadstring+setglobal on the live state hung
@@ -3046,6 +3109,7 @@ static void do_raycast(void) {
         }
     }
 
+scan_done:
     if (g_verbose_log) {
         log_msg("[RAYCAST] Scan: tried=%d hits=%d boxfail=%d miss=%d dead=%d nolp=%d pointbox=%d huge=%d crashed=%d\n",
             max_try, hits, box_fail, miss, dead, nolp_n, pointbox_n, huge_n, crashed);
@@ -3114,6 +3178,112 @@ static void do_raycast(void) {
     // Re-enable Lua GC (was stopped at scan start); SEH-protected with retry.
     gc_restart_safe();
     log_msg("%s", "[RAYCAST] F4 done\n");
+}
+
+/* v10.66: Numpad1 scan-box pick. Project each candidate box center to the
+ * screen; if one is within tolerance of screen center (0.5,0.5), lock its
+ * unit directly. Returns 1 and fills the hit globals when picked. */
+static int pick_and_lock_scan_box(void) {
+    if (!g_L) return 0;
+    if (g_segfault_flag) return 0;
+    int saved_q = g_quiet_exec;
+    int saved_b = g_exec_bypass;
+    g_quiet_exec = 1;
+    g_exec_bypass = 1;
+    exec_lua("return (_G.rc_scan_boxes and #_G.rc_scan_boxes) or 0");
+    if (atoi(g_last_result[0] ? g_last_result : "0") <= 0) {
+        g_quiet_exec = saved_q;
+        g_exec_bypass = saved_b;
+        return 0;
+    }
+    exec_lua(
+        "local bxs = _G.rc_scan_boxes "
+        "if not bxs or #bxs == 0 then return '0' end "
+        "local S = stingray "
+        "local w = S.Application.main_world() "
+        "local okp, pose = pcall(S.World.debug_camera_pose, w) "
+        "if not okp or not pose then return '0' end "
+        "local M = S.Matrix4x4 "
+        "local t = M.translation(pose) "
+        "local camx, camy, camz = t.x, t.y, t.z "
+        "local fw = M.forward(pose) "
+        "local fx2, fy2, fz2 = fw.x, fw.y, fw.z "
+        "local rv, uv2 = M.right(pose), M.up(pose) "
+        "local rl2 = math.sqrt(rv.x*rv.x+rv.y*rv.y+rv.z*rv.z) "
+        "local ul2 = math.sqrt(uv2.x*uv2.x+uv2.y*uv2.y+uv2.z*uv2.z) "
+        "if rl2 < 1e-6 or ul2 < 1e-6 then return '0' end "
+        "local rxx, rxy, rxz = rv.x/rl2, rv.y/rl2, rv.z/rl2 "
+        "local uxx, uxy, uxz = uv2.x/ul2, uv2.y/ul2, uv2.z/ul2 "
+        "local fp = 1.0 "
+        "local rw, rh = 1920, 1080 "
+        "local g = _G.rc_panel_gui "
+        "if g then local okrr, rr1, rr2 = pcall(S.Gui.render_resolution, g); if okrr and rr1 then rw, rh = rr1, rr2 end end "
+        "local asp = rw / rh "
+        "local best, bestd = nil, 0.04 "
+        "for i2, b2 in ipairs(bxs) do "
+        "  if b2 and b2[1] and b2[8] then "
+        "    local lx, ly, lz = b2[1]-camx, b2[2]-camy, b2[3]-camz "
+        "    local vz2 = lx*fx2+ly*fy2+lz*fz2 "
+        "    if vz2 > 0.05 then "
+        "      local vx2 = lx*rxx+ly*rxy+lz*rxz "
+        "      local vy2 = lx*uxx+ly*uxy+lz*uxz "
+        "      local sx = (vx2*fp/asp/vz2*0.5+0.5) "
+        "      local sy = (-vy2*fp/vz2*0.5+0.5) "
+        "      if sx >= 0 and sx <= 1 and sy >= 0 and sy <= 1 then "
+        "        local d2 = (sx-0.5)^2 + (sy-0.5)^2 "
+        "        if d2 < bestd then best, bestd = i2, d2 end "
+        "      end "
+        "    end "
+        "  end "
+        "end "
+        "if not best then return '0' end "
+        "local bidx = bxs[best][8] "
+        "local ents = _G.rc_ents "
+        "local u = ents and ents[bidx] "
+        "if not u then return '0' end "
+        "local okr, rn = pcall(S.Unit.resource_name, u) "
+        "local rnstr = okr and tostring(rn) or '' "
+        "local h = rnstr:match('#ID%[%x+%]') or '' "
+        "local hexfull = h:sub(5, -2) or '' "
+        "if hexfull == '' then return '0' end "
+        "local okb, bA, bB = pcall(S.Unit.box, u) "
+        "if not okb or not bA or not bA.x or not bB or not bB.x then return '0' end "
+        "local cx, cy, cz = (bA.x+bB.x)/2, (bA.y+bB.y)/2, (bA.z+bB.z)/2 "
+        "local hx2, hy2, hz2 = (bB.x-bA.x)/2, (bB.y-bA.y)/2, (bB.z-bA.z)/2 "
+        "_G.rc_hit_unit = u "
+        "_G.rc_hitbox = {{cx-hx2,cy-hy2,cz-hz2},{cx+hx2,cy-hy2,cz-hz2},{cx-hx2,cy+hy2,cz-hz2},{cx+hx2,cy+hy2,cz-hz2},{cx-hx2,cy-hy2,cz+hz2},{cx+hx2,cy-hy2,cz+hz2},{cx-hx2,cy+hy2,cz+hz2},{cx+hx2,cy+hy2,cz+hz2}} "
+        "_G.rc_vx, _G.rc_vy, _G.rc_vz = cx, cy, cz "
+        "_G.rc_vd = math.sqrt((cx-camx)^2+(cy-camy)^2+(cz-camz)^2) "
+        "return hexfull .. '|' .. string.format('%.2f,%.2f,%.2f', cx, cy, cz)"
+    );
+    char *r = g_last_result;
+    if (!r || !r[0] || r[0] == '0' || strncmp(r, "0|", 2) == 0) {
+        g_quiet_exec = saved_q;
+        g_exec_bypass = saved_b;
+        return 0;
+    }
+    char *bar = strchr(r, '|');
+    if (!bar) { g_quiet_exec = saved_q; g_exec_bypass = saved_b; return 0; }
+    *bar = 0;
+    snprintf(g_hit_rn, sizeof(g_hit_rn), "#ID[%s]", r);
+    snprintf(g_hit_nh, sizeof(g_hit_nh), "%s", r);
+    float cx = 0, cy = 0, cz = 0;
+    if (sscanf(bar + 1, "%f,%f,%f", &cx, &cy, &cz) != 3) {
+        g_quiet_exec = saved_q; g_exec_bypass = saved_b; return 0;
+    }
+    g_hit_x = cx; g_hit_y = cy; g_hit_z = cz;
+    g_hit_dist = sqrtf((cx - g_cam_x) * (cx - g_cam_x) +
+                       (cy - g_cam_y) * (cy - g_cam_y) +
+                       (cz - g_cam_z) * (cz - g_cam_z));
+    g_has_hit = 1;
+    g_tracking = 0;
+    g_track_key[0] = 0;
+    g_track_idx = 0;
+    g_quiet_exec = saved_q;
+    g_exec_bypass = saved_b;
+    log_msg("[RAYCAST] box-pick: key=%s dist=%.1f pos=(%.1f,%.1f,%.1f)\n",
+        r, g_hit_dist, cx, cy, cz);
+    return 1;
 }
 
 // ============================================================
