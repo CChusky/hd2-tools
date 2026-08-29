@@ -32,8 +32,18 @@ hd2-tools/
 │   ├── dll_injector.c   # manual injector
 │   └── build_clean.bat / build_watcher.bat
 └── meshes/              # offline mesh outline tables (mesh_verts_<hash>.txt, 5668 tables)
-                        # loaded on demand from D:\hd2_meshtables\ (or rebuilt with build_all2.py)
+                        # loaded on demand - see "Mesh Database" below
 ```
+
+## Mesh Database
+
+Mesh outline tables are loaded on demand with this search order:
+
+1. `HD2_MESH_DIR` environment variable (point it at any folder containing the tables)
+2. `meshes\` next to `hd2_raycast_hook.dll` (repo layout - clone and it just works)
+3. Legacy `D:\hd2_meshtables`
+
+Rebuild the tables with `meshes/build_all2.py`.
 
 ## Build
 

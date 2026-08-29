@@ -32,8 +32,18 @@ hd2-tools/
 │   ├── dll_injector.c   # 手动注入器
 │   └── build_clean.bat / build_watcher.bat
 └── meshes/              # 离线 mesh 轮廓表（mesh_verts_<hash>.txt，共 5668 表）
-                        # 运行时按需加载到 D:\hd2_meshtables\（或 build_all2.py 重新生成）
+                        # 按需加载，位置见下方"Mesh 数据库"
 ```
+
+## Mesh 数据库
+
+mesh 轮廓表按以下优先级加载：
+
+1. 环境变量 `HD2_MESH_DIR`（指向任意存放表的文件夹）
+2. hook DLL 同目录的 `meshes\`（仓库布局——clone 下来即可用）
+3. 旧路径 `D:\hd2_meshtables`
+
+重新生成表：`meshes/build_all2.py`。
 
 ## 构建
 
