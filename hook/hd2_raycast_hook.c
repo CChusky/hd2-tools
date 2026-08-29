@@ -3003,7 +3003,7 @@ static void install_odsw_hook(void)
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.57"
+#define RC_BUILD_VER "v10.58"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -3468,6 +3468,19 @@ static void shm_write_ui(void) {
             /* hit an entity with no offline mesh table yet - queue it so the
              * on-demand builder can generate it while the game is unfocused */
             mesh_pending_add(s->hit_hash64);
+            mesh_pending_save();
+            /* v10.58: the previous code was silent about missing tables,
+             * which made "outline didn't draw" impossible to diagnose.
+             * Log the miss with the resolved path, throttled to 3s. */
+            static DWORD last_mesh_miss_log = 0;
+            DWORD now_mm = GetTickCount();
+            if ((now_mm - last_mesh_miss_log) > 3000) {
+                last_mesh_miss_log = now_mm;
+                char mpath[MAX_PATH];
+                mesh_table_path(mpath, sizeof(mpath), s->hit_hash64);
+                log_msg("[RAYCAST] mesh outline SKIPPED: no table for hash=%llu path=%s (queued for builder)\n",
+                    (unsigned long long)s->hit_hash64, mpath);
+            }
         }
         if (mt && mt->nedges > 0) {
             g_quiet_exec = 1;
