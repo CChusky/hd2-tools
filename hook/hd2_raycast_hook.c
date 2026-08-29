@@ -3003,7 +3003,7 @@ static void install_odsw_hook(void)
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.56"
+#define RC_BUILD_VER "v10.57"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -7067,7 +7067,13 @@ static void do_raycast(void) {
             "-- (negative cam coords inline would produce '--' which Lua reads as a comment)\n"
             "local ox, oy, oz = _G.rc_f4_ox, _G.rc_f4_oy, _G.rc_f4_oz\n"
             "local cdist = math.sqrt((wcx-ox)^2 + (wcy-oy)^2 + (wcz-oz)^2)\n"
-            "if hx > 10 or hy > 10 or hz > 10 then return 'huge', rn_str, nh_str, wcx, wcy, wcz, hx, hy, hz, cdist, 'huge', boxmode end\n"
+            "-- v10.57: huge filter relaxed 10m -> 50m half-size. Units with a\n"
+            "-- box half > 50m are treated as world/terrain background and\n"
+            "-- skipped; large interactables (ship parts, big props - the\n"
+            "-- entities players actually aim at) now participate in hit\n"
+            "-- detection instead of being silently dropped (was: >10m skip,\n"
+            "-- which made big targets unscannable while small near units won).\n"
+            "if hx > 50 or hy > 50 or hz > 50 then return 'huge', rn_str, nh_str, wcx, wcy, wcz, hx, hy, hz, cdist, 'huge', boxmode end\n"
             "-- World-space AABB from center + half-size\n"
             "local minx, miny, minz = wcx - hx, wcy - hy, wcz - hz\n"
             "local maxx, maxy, maxz = wcx + hx, wcy + hy, wcz + hz\n"
