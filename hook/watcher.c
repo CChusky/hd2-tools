@@ -16,8 +16,43 @@
 #include <psapi.h>
 
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "advapi32.lib")
 
 static FILE *g_log = NULL;
+static void log_msg(const char *fmt, ...); /* forward decl (v3) */
+
+/* v3: SeDebugPrivilege so OpenProcess succeeds against the protected
+ * (Themida) game process when watcher runs non-elevated. Same helper as
+ * dumpexe. */
+static int enable_debug_priv(void) {
+    HANDLE hTok = NULL;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hTok))
+        return 0;
+    TOKEN_PRIVILEGES tp;
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &tp.Privileges[0].Luid)) {
+        CloseHandle(hTok); return 0;
+    }
+    BOOL ok = AdjustTokenPrivileges(hTok, FALSE, &tp, 0, NULL, NULL);
+    CloseHandle(hTok);
+    return ok ? 1 : 0;
+}
+
+/* Open the game with the minimal rights injection actually needs; fall back
+ * to full access if the minimal set is denied (elevated tooling). */
+static HANDLE open_game_process(DWORD pid) {
+    HANDLE h = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION |
+                           PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+                           FALSE, pid);
+    if (!h) {
+        DWORD e1 = GetLastError();
+        h = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+        if (!h)
+            log_msg("OpenProcess(%lu) denied: min err=%lu, full err=%lu\n", pid, e1, GetLastError());
+    }
+    return h;
+}
 
 static void log_msg(const char *fmt, ...) {
     va_list args;
@@ -104,9 +139,9 @@ static void wait_game_ready(DWORD pid, HANDLE hp) {
 }
 
 static int inject_dll(DWORD pid, const char *dll_path) {
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    HANDLE hProcess = open_game_process(pid);
     if (!hProcess) {
-        log_msg("OpenProcess(%lu) failed: %lu\n", pid, GetLastError());
+        log_msg("Cannot open game process for injection\n");
         return -1;
     }
     size_t path_len = strlen(dll_path) + 1;
@@ -184,6 +219,7 @@ int main(int argc, char *argv[]) {
 
     g_log = fopen("watcher_log.txt", "a");
     log_msg("=== HD2 watcher started (resident) ===\n");
+    log_msg("SeDebugPrivilege: %s\n", enable_debug_priv() ? "OK" : "FAIL (run as admin if injection is denied)");
     log_msg("Target: %s | DLL: %s\n", process_name, dll_path);
     if (GetFileAttributesA(dll_path) == INVALID_FILE_ATTRIBUTES) {
         log_msg("ERROR: DLL not found: %s\n", dll_path);
