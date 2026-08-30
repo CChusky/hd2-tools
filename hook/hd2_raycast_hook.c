@@ -1464,7 +1464,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.76"
+#define RC_BUILD_VER "v10.77"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1937,7 +1937,10 @@ static int htab_cmp(const void *a, const void *b) {
 /* v10.64: resolve the hash table like mesh tables - try env HD2_HASH_TABLE,
  * then hash_table.txt next to the DLL, then the legacy RC_DIR
  * 哈希对照表.txt. The old code hard-coded RC_DIR, so packaged users (no
- * RC_DIR on their machine) silently lost every type name. */
+ * RC_DIR on their machine) silently lost every type name.
+ * v10.77: language-aware - non-Chinese builds load hash_table_en.txt first
+ * (fully Englishized names), Chinese builds load hash_table_zh.txt first,
+ * both fall back to hash_table.txt. */
 static FILE *hash_table_open(void) {
     char cand[MAX_PATH];
     const char *env = getenv("HD2_HASH_TABLE");
@@ -1952,6 +1955,15 @@ static FILE *hash_table_open(void) {
             char *slash = strrchr(dir, '\\');
             if (slash) {
                 slash[1] = 0;
+                if (!is_cn_game_lang()) {
+                    snprintf(cand, sizeof(cand), "%shash_table_en.txt", dir);
+                    FILE *f = rc_fopen_utf8(cand, "r");
+                    if (f) return f;
+                } else {
+                    snprintf(cand, sizeof(cand), "%shash_table_zh.txt", dir);
+                    FILE *f = rc_fopen_utf8(cand, "r");
+                    if (f) return f;
+                }
                 snprintf(cand, sizeof(cand), "%shash_table.txt", dir);
                 FILE *f = rc_fopen_utf8(cand, "r");
                 if (f) return f;
