@@ -392,11 +392,31 @@ static void render(void) {
             }
             uint32_t sc = g_shm->ui_scanbox_count;
             if (sc > 16) sc = 16;
+            /* v1.4: full 12-edge wireframe per scan box (was: bottom 4 edges
+             * only, which looked like a flat funnel). Matches HD2HUD.fx. */
+            static const int scan_edge[12][2] = {
+                {0,1},{1,3},{3,2},{2,0},   /* bottom */
+                {4,5},{5,7},{7,6},{6,4},   /* top */
+                {0,4},{1,5},{2,6},{3,7}    /* vertical */
+            };
             for (uint32_t k = 0; k < sc; k++) {
                 const float *b = &g_shm->ui_scanbox[k][0][0];
-                for (int i = 0; i < 4; i++)
-                    draw_line(g, b + i * 2, b + ((i + 1) % 4) * 2, g_w, g_h, pen_scan);
+                for (int e = 0; e < 12; e++)
+                    draw_line(g, b + scan_edge[e][0] * 2, b + scan_edge[e][1] * 2, g_w, g_h, pen_scan);
             }
+        }
+        /* ---- v1.4: fixed crosshair at screen center (magenta) ----
+         * The detection ray always fires from screen center; the fx shader
+         * draws this same cross. Without it the overlay had no aim anchor. */
+        Pen pen_cross(Color(230, 255, 0, 255), 2.0f);
+        float ccx = g_w * 0.5f, ccy = g_h * 0.5f;
+        g.DrawLine(&pen_cross, ccx - 14, ccy, ccx + 14, ccy);
+        g.DrawLine(&pen_cross, ccx, ccy - 14, ccx, ccy + 14);
+        /* ---- ray beam: screen center -> hit point (magenta, matches fx) */
+        if (g_shm->ui_hit[2] > 0.5f) {
+            Pen pen_ray(Color(200, 255, 0, 255), 1.5f);
+            g.DrawLine(&pen_ray, ccx, ccy,
+                       g_shm->ui_hit[0] * g_w, g_shm->ui_hit[1] * g_h);
         }
         /* ---- 命中标记 ---- */
         if (g_show_mark && g_shm->ui_hit[2] > 0.5f) {
@@ -444,13 +464,30 @@ static void render(void) {
                 ay = ay * g_h;
                 int n = g_shm->label_count;
                 if (n > 96) n = 96;
-                /* pass 1: rows + widest row (screen px, real advances) */
+                /* v1.4: measure EVERY char with GDI+ (matches DrawString).
+                 * The old code advanced by the hook's GDI GetTextExtentPoint32W
+                 * advance (label_widths), which is narrower than GDI+ renders,
+                 * so glyphs overlapped ("text stacking"). */
+                float adv[96];
+                for (int i = 0; i < n; i++) {
+                    int32_t slot = g_shm->label_slots[i];
+                    adv[i] = 0;
+                    if (slot == -2) continue;
+                    if (slot < 0) { n = i; break; }
+                    wchar_t ch = atlas_char_at(g_shm->atlas_chars, slot);
+                    if (ch) {
+                        RectF rf;
+                        g.MeasureString(&ch, 1, &fx_font, PointF(0, 0), &rf);
+                        adv[i] = rf.Width + 2.0f;
+                    }
+                }
+                /* pass 1: rows + widest row (screen px) */
                 int nrows = 1;
                 float crow = 0, maxrow = 0;
                 for (int i = 0; i < n; i++) {
                     int32_t slot = g_shm->label_slots[i];
                     if (slot == -2) { if (crow > maxrow) maxrow = crow; crow = 0; nrows++; }
-                    else if (slot >= 0) crow += g_shm->label_widths[i] * sc;
+                    else if (slot >= 0) crow += adv[i];
                     else break;
                 }
                 if (crow > maxrow) maxrow = crow;
@@ -462,13 +499,12 @@ static void render(void) {
                     int32_t slot = g_shm->label_slots[i];
                     if (slot == -2) { cy += row_h; cx = x0; continue; }
                     if (slot < 0) break;
-                    float cwid = g_shm->label_widths[i] * sc;
                     wchar_t ch = atlas_char_at(g_shm->atlas_chars, slot);
-                    if (cwid > 0.5f && ch) {
-                        g.FillRectangle(&br_back, cx, cy, cwid, sch);
+                    if (adv[i] > 0.5f && ch) {
+                        g.FillRectangle(&br_back, cx, cy, adv[i], sch);
                         g.DrawString(&ch, 1, &fx_font, PointF(cx, cy + 1.0f), &br_white);
                     }
-                    cx += cwid;
+                    cx += adv[i];
                 }
             }
         }
