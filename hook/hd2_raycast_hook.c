@@ -952,6 +952,58 @@ static float g_track_ox = 0, g_track_oy = 0, g_track_oz = 0;
 
 static const char *hash_lookup(uint64_t h);
 
+/* True if the string contains CJK ideographs (UTF-8 lead bytes E4-E9 cover
+ * U+4E00..U+9FFF). Used to ban localized Chinese names on EN game builds. */
+static int has_cjk(const char *s) {
+    if (!s) return 0;
+    const unsigned char *p = (const unsigned char *)s;
+    for (; *p; p++)
+        if (*p >= 0xE4 && *p <= 0xE9) return 1;
+    return 0;
+}
+
+/* Game language detection: HD2 stores the ACTUAL in-game UI language in
+ * %APPDATA%\Arrowhead\Helldivers2\saves\<steamid>_user_settings.config
+ * (field: language = "cn"). The Steam appmanifest language only controls
+ * which language packs were downloaded and stays "english" even with a
+ * Chinese UI - it must NOT be trusted here. Cache the result; default
+ * non-CN when no config is found (fail-safe: no CJK on screen). */
+static int g_lang_cn = -1;
+static int is_cn_game_lang(void) {
+    if (g_lang_cn >= 0) return g_lang_cn;
+    g_lang_cn = 0;
+    const char *appdata = getenv("APPDATA");
+    if (appdata) {
+        char dir[MAX_PATH], pat[MAX_PATH];
+        snprintf(dir, sizeof(dir), "%s\\Arrowhead\\Helldivers2\\saves", appdata);
+        snprintf(pat, sizeof(pat), "%s\\*_user_settings.config", dir);
+        WIN32_FIND_DATAA fd;
+        HANDLE hf = FindFirstFileA(pat, &fd);
+        if (hf != INVALID_HANDLE_VALUE) {
+            do {
+                char full[MAX_PATH];
+                snprintf(full, sizeof(full), "%s\\%s", dir, fd.cFileName);
+                FILE *f = rc_fopen_utf8(full, "r");
+                if (!f) continue;
+                char line[512];
+                while (fgets(line, sizeof(line), f)) {
+                    if (!strstr(line, "language")) continue;
+                    if (strstr(line, "\"cn\"") || strstr(line, "\"tcn\"") ||
+                        strstr(line, "\"zh\"") || strstr(line, "\"tw\"") ||
+                        strstr(line, "\"schinese\"") || strstr(line, "\"tchinese\""))
+                        g_lang_cn = 1;
+                    break;
+                }
+                fclose(f);
+                if (g_lang_cn) break;
+            } while (FindNextFileA(hf, &fd));
+            FindClose(hf);
+        }
+    }
+    log_msg("[RAYCAST] game language: %s\n", g_lang_cn ? "chinese" : "non-chinese (CJK names hidden)");
+    return g_lang_cn;
+}
+
 // ReShade addon core (hd2_addon_core.cpp, linked into this DLL).
 // Registers this module as an EXTERNAL addon with ReShade at runtime,
 // bypassing the official builds' "limited add-on functionality" scan limit.
@@ -1284,7 +1336,17 @@ static void shm_write_hit(void) {
                 line_arch[al] = 0;
                 snprintf(line_rest, sizeof(line_rest), "%s", slash + 1);
             } else {
-                snprintf(line_arch, sizeof(line_arch), "?");
+                /* SDK workflow: the Archive column is the first thing a
+                 * modeler picks in the SDK before searching. Localized /
+                 * single-segment names (Excel overlay) carry no path, so
+                 * "?" made the target unsearchable. Show the full 64-bit
+                 * hash in hex (matches the SDK's #ID[...] format, directly
+                 * searchable); fall back to "?" only when no hash exists. */
+                if (s->hit_hash64)
+                    snprintf(line_arch, sizeof(line_arch), "%016llx",
+                        (unsigned long long)s->hit_hash64);
+                else
+                    snprintf(line_arch, sizeof(line_arch), "?");
                 snprintf(line_rest, sizeof(line_rest), "%s", s->hit_name);
             }
             snprintf(line_arch_f, sizeof(line_arch_f), "Archive: %s", line_arch);
@@ -1402,7 +1464,7 @@ static int rc_safe_read64(uint64_t a, uint64_t *out) {
 
 /* build version banner - printed once at load so we can ALWAYS tell which
  * DLL the injector actually loaded */
-#define RC_BUILD_VER "v10.75"
+#define RC_BUILD_VER "v10.76"
 static void rc_print_version_banner(void) {
     static volatile LONG done = 0;
     if (InterlockedExchange(&done, 1) == 0) {
@@ -1931,7 +1993,15 @@ static const char *hash_lookup(uint64_t h) {
     int lo = 0, hi = g_htab_count - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (g_htab[mid].hash == h) return g_htab[mid].name;
+        if (g_htab[mid].hash == h) {
+            const char *nm = g_htab[mid].name;
+            /* EN builds must never surface localized Chinese names: the SDK
+             * workflow reads Archive/name from the HUD, and CJK text is
+             * unsearchable against an EN game. Fall through to hash display
+             * (thin=... / hex Archive) instead of showing CJK. */
+            if (!is_cn_game_lang() && has_cjk(nm)) return NULL;
+            return nm;
+        }
         if (g_htab[mid].hash < h) lo = mid + 1; else hi = mid - 1;
     }
     return NULL;
