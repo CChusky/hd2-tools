@@ -44,10 +44,12 @@ hd2-tools/
 
 ## Mesh Database
 
+**Release packages include the full mesh outline tables (`meshes\`, ~427MB) - extract and it just works.**
+
 Mesh outline tables are loaded on demand with this search order:
 
 1. `HD2_MESH_DIR` environment variable (point it at any folder containing the tables)
-2. `meshes\` next to `hd2_raycast_hook.dll` (repo layout - clone and it just works)
+2. `meshes\` next to `hd2_raycast_hook.dll` (included in release / repo layout - clone and it just works)
 3. Legacy `D:\hd2_meshtables`
 
 Rebuild the tables with `meshes/build_all2.py`.

@@ -38,10 +38,12 @@ hd2-tools/
 
 ## Mesh 数据库
 
+**发布包已内置完整 mesh 轮廓表（`meshes\` 目录，约 427MB），解压即用，无需单独下载。**
+
 mesh 轮廓表按以下优先级加载：
 
 1. 环境变量 `HD2_MESH_DIR`（指向任意存放表的文件夹）
-2. hook DLL 同目录的 `meshes\`（仓库布局——clone 下来即可用）
+2. hook DLL 同目录的 `meshes\`（发布包内置 / 仓库布局——clone 下来即可用）
 3. 旧路径 `D:\hd2_meshtables`
 
 重新生成表：`meshes/build_all2.py`。
